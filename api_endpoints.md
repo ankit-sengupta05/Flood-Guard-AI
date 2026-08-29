@@ -43,8 +43,8 @@
 
 | Method | Endpoint | Description | Min Role | Request Body | Response |
 |---|---|---|---|---|---|
-| GET | `/dams` | List all registered dams (map + registry view) | PUBLIC | — | `{items: [{dam_id, name, river, lat, lng, state, district, height_m, reservoir_capacity_mcm}], total, page, page_size}` |
-| GET | `/dams/{id}` | Full dam/reservoir/environment record | PUBLIC | — | `{dam_id, name, river, lat, lng, state, district, height_m, reservoir_capacity_mcm, water_level_pct, dem_ref, land_use_ref, updated_at}` |
+| GET | `/dams` | List all registered dams (Home/Command Center 3D map + dam-card list, `frontend_spec.md` §1) | PUBLIC | — | `{items: [{dam_id, name, river, lat, lng, state, district, height_m, reservoir_capacity_mcm, water_level_pct, status, terrain_tile_ref}], total, page, page_size}` — `status` is server-derived from the dam's latest published scenario (e.g. `"no_active_scenario"`, `"published:<priority_tier>"`, `"validation_available"`); it is never a live-sensor reading (`constraints.md` C4). `terrain_tile_ref` points at the dam's terrain-RGB tile set for the Home 3D globe (`tech_stack.md` §1) |
+| GET | `/dams/{id}` | Full dam/reservoir/environment record | PUBLIC | — | `{dam_id, name, river, lat, lng, state, district, height_m, reservoir_capacity_mcm, water_level_pct, status, dem_ref, land_use_ref, terrain_mesh_ref, terrain_tile_ref, updated_at}` — `terrain_mesh_ref` is the per-dam glTF mesh consumed by `Scene3DViewport` (`tech_stack.md` §1); `dem_ref`/`land_use_ref` remain the raw geospatial sources the mesh was generated from |
 | POST | `/dams` | Register a new dam | SYSTEM_ADMIN | `{name, river, lat, lng, state, district, height_m, reservoir_capacity_mcm, dem_source, bounding_box}` | `{dam_id}` |
 | PATCH | `/dams/{id}` | Update dam metadata | SYSTEM_ADMIN (full) / EMERGENCY_MANAGER (propose) | Partial dam object | `{dam_id, updated_fields}` or `{status: "pending_approval"}` |
 | GET | `/dams/{id}/environment` | Village/road/bridge/building/shelter/critical-infrastructure layers | PUBLIC | — | GeoJSON FeatureCollection per layer type |
@@ -65,7 +65,7 @@
 |---|---|---|---|---|---|
 | POST | `/scenarios/{id}/sph/run` | Run the SPH breach-zone component | ANALYST (own) | `{mode: "real"|"surrogate"}` | `{job_id, status: "queued"}` |
 | POST | `/scenarios/{id}/delft3d/run` | Run the Delft3D propagation component | ANALYST (own) | `{mode: "real"|"surrogate", coupling: "independent"|"coupled"}` | `{job_id, status: "queued"}` |
-| GET | `/scenarios/{id}/flood-timesteps` | Precomputed depth/velocity/arrival grids for playback | PUBLIC (if published) / ANALYST+ | Query: `engine=sph|delft3d` | `{terrain_ref, model_mode, timesteps: [{t, depth_grid_ref, velocity_grid_ref}], arrival_time_grid_ref}` |
+| GET | `/scenarios/{id}/flood-timesteps` | Precomputed depth/velocity/arrival grids for playback | PUBLIC (if published) / ANALYST+ | Query: `engine=sph|delft3d` | `{terrain_ref, model_mode, timesteps: [{t, depth_grid_ref, velocity_grid_ref, depth_texture_ref, velocity_texture_ref}], arrival_time_grid_ref}` — `_texture_ref` fields are the pre-converted heightfield/texture tiles `Scene3DViewport` consumes directly (`tech_stack.md` §3); the frontend never converts a raw GeoTIFF client-side |
 | GET | `/scenarios/{id}/compare` | SPH vs. Delft3D comparison metrics | PUBLIC (if published) / ANALYST+ | — | `{sph: {extent_km2, max_depth_m, max_velocity_ms, arrival_time_min, compute_time_s, model_mode}, delft3d: {...}, satellite_agreement_pct}` |
 
 ### 4.4 Uncertainty & Satellite Validation

@@ -6,8 +6,10 @@ This stack follows the master prompt's recommended architecture directly (React/
 
 | Layer | Tool | Alternative | Notes |
 |---|---|---|---|
-| Frontend framework | React / Next.js | — | Next.js if SSR/routing across 18 dashboard pages is worth the setup; plain React + Vite if the team wants a lighter build |
-| Map | Leaflet | MapLibre GL JS | Leaflet is free/open-source, no API key, sufficient for markers, layers, and a timeline slider; MapLibre if vector-tile styling for the flood-extent/velocity layers is wanted |
+| Frontend framework | React / Next.js | — | Next.js for SSR/routing — every dam gets a dynamically-routed page (`/dams/[damId]`), which Next.js file-based routing fits directly |
+| Home globe (India command-center view) | MapLibre GL JS (3D globe + terrain mode) | CesiumJS | MapLibre is free/open-source, needs no account/API key when self-hosting terrain-RGB tiles, and its `globe` projection + `terrain` source give a real 3D India view with dam markers and camera tilt/zoom — sufficient for the Home/Command Center's map-only needs. CesiumJS is the fallback if the team wants globe-scale quantized-mesh terrain and is willing to manage a Cesium ion account (free tier is usage-capped — a budget risk per C3) |
+| Per-dam 3D scene (terrain, flood, drone view) | three.js + `@react-three/fiber` + `@react-three/drei` | deck.gl (layered on three.js) | Every simulation/result page renders inside one shared `Scene3DViewport` component (see `frontend_spec.md` §0): a real heightmap mesh built from each dam's DEM, textured with land-use/satellite imagery, with flood depth/velocity/arrival-time rendered as an animated water-surface mesh and instanced-point SPH particles. `drei`'s `PointerLockControls`/`FlyControls` give the free-fly "drone view" camera (WASD + mouse-look) alongside a fixed cinematic camera mode. deck.gl is added only if a specific layer (e.g. very large instanced road/village point sets) needs GPU-accelerated layers three.js doesn't give for free |
+| Terrain mesh pipeline | `rasterio` + `numpy` (server-side heightmap generation) → glTF/quantized static mesh assets served from object storage | Real-time client-side heightmap generation from raw DEM | Meshing 90m/30m SRTM tiles into a renderable mesh is a one-time preprocessing step per registered dam (see `data-layer/dem_ingest.py` in §4), not a per-request or per-frame computation — matches the "precomputed, not live physics" principle already established for timestep playback (C8) |
 | Backend/API | Python, FastAPI | Flask/Django | Async-friendly; one Python codebase spans API, geospatial processing, and simulation-adapter glue |
 | Geospatial processing | GDAL, GeoPandas, Rasterio, Shapely | PostGIS-only spatial queries | Used for DEM clipping/reprojection, raster↔vector conversion, and the village/road/building overlay logic in the Risk Engine |
 | Database | PostgreSQL + PostGIS | Separate spatial DB | One database for dam registry, scenarios, grids metadata, impact records, evacuation plans, alerts/priority lists |
@@ -29,6 +31,13 @@ This stack follows the master prompt's recommended architecture directly (React/
 | Version control / collaboration | Git + GitHub, GitHub Projects/Issues | — | `api_endpoints.md` is the shared source of truth referenced in issues |
 
 ## 2. Why Each Choice, In Detail
+
+### Why 3D-only, with no 2D map fallback
+The dashboard's map/scene layer is built exclusively as a 3D environment — there is no 2D Leaflet-style flat map anywhere in the product, including on pages that only strictly need a flat overlay (e.g. Time-to-Flood bands, Dynamic Route Safety). Reasons this is a deliberate, product-wide decision rather than a per-page choice:
+- The system already computes real, geo-referenced terrain (SRTM/ASTER DEM) for every registered dam (`important-dam-locations.md`) — a 3D heightmap is a direct rendering of data the system already has, not an added simulation.
+- Judges evaluate a dam-break tool on how convincingly it communicates *where water goes across real terrain* — a tilted 3D terrain view of a reservoir, breach, and downstream valley reads as materially more convincing than a flat colored polygon, for the same underlying grid data.
+- One rendering pipeline (`Scene3DViewport`, `frontend_spec.md` §0) reused across all 13 map-bearing pages is less frontend surface area than maintaining both a 2D Leaflet map and a separate 3D viewer.
+- The trade-off, stated honestly: 3D terrain rendering is heavier on the browser (WebGL/GPU-bound) than a 2D tile map, and mesh/tile generation is an added per-dam preprocessing step (§1, Terrain mesh pipeline row). This is why meshing is precomputed server-side per dam rather than attempted live, and why the "drone view" free-fly camera is a client-side camera control over already-computed grids — never a new physics computation (see `constraints.md` C22).
 
 ### Real Model Mode vs. Demo/Surrogate Mode — the central engineering decision
 Genuine SPH and Delft3D runs are heavy, often desktop-GUI-oriented tools not designed for a hackathon's compressed timeline or free-tier hosting. Rather than either (a) falsely claiming a simplified approximation is a full SPH/Delft3D run, or (b) not attempting the real tools at all, the adapter layer makes both paths implement the same interface (`run(scenario_params) -> {depth_grid, velocity_grid, arrival_time_grid, model_mode}`). This lets the team start immediately with the surrogate mode (needed for every other module to be buildable in parallel), and swap in a genuine SPH/Delft3D run later for the hero dam if time allows — without any downstream code (Flood Digital Twin, Risk Engine, Evacuation Intelligence) needing to change. `model_mode` is a first-class field in every response, and the dashboard is required to render it (NFR7).
@@ -66,6 +75,7 @@ This keeps the offline capability inside the same web app (no native app build) 
 | Scenario Generator | Hydrodynamic Engine (Celery job) | JSON job payload: dam terrain/river refs + resolved scenario parameters |
 | SPH | Delft3D (coupled mode only) | Discharge-vs-time hydrograph, JSON array of `{t, discharge}` |
 | Hydrodynamic Engine | Flood Digital Twin | GeoTIFF depth/velocity per timestep + one arrival-time GeoTIFF, referenced by `_ref` |
+| Flood Digital Twin | Frontend `Scene3DViewport` | Per-dam static terrain mesh (glTF, generated once) + per-timestep depth/velocity GeoTIFFs converted server-side into heightfield/texture tiles the mesh shader consumes — the frontend never meshes a raw DEM or raw simulation GeoTIFF itself |
 | Flood Digital Twin | Uncertainty Engine | Set of GeoTIFFs across ensemble members, keyed by `scenario_group_id` |
 | Flood Digital Twin | Satellite Validation | Simulated extent polygon (from thresholded depth grid) vs. GEE-extracted observed extent polygon |
 | Flood Digital Twin | Risk Engine | Depth/velocity/arrival grids + village/road/building/infrastructure vector layers |
@@ -130,9 +140,11 @@ flood-guard-ai/
 └── frontend/
     ├── mocks/                   # JSON fixtures matching api_endpoints.md shapes
     └── src/
-        ├── pages/                # 18 dashboard pages per frontend_spec.md
-        ├── components/           # MapView, ScenarioBuilder, TimeSlider, PriorityList, ExplainPanel
-        └── offline/              # service worker + IndexedDB cache logic
+        ├── pages/                # Home + dynamic /dams/[damId]/* routes per frontend_spec.md
+        ├── three/                # Scene3DViewport: terrain mesh loader, flood-layer shaders, drone FlyControls, cinematic camera rig
+        ├── components/           # DamCard, StatusPill, ScenarioBuilder, TimelineScrubber, StatGraphCard, PriorityList, ExplainPanel
+        ├── styles/               # design-system.md tokens (color, radius, type) as CSS variables / Tailwind theme config
+        └── offline/              # service worker + IndexedDB cache logic (includes cached terrain mesh + texture assets, not just JSON)
 ```
 
 ## 5. Setup Order
@@ -140,7 +152,8 @@ flood-guard-ai/
 1. Agree and freeze `docs/api_endpoints.md` v1 before any team writes feature code (Phase 0 in `PRD.md`).
 2. Backend: Python env, FastAPI, PostgreSQL with PostGIS installed, Redis + Celery worker scaffold, JWT auth scaffold.
 3. Data layer: GDAL/GeoPandas/Rasterio/Shapely installed; GEE Python API authenticated (service account or user OAuth) and one test Sentinel pull confirmed working — do this early, GEE auth setup is a common late-stage blocker.
-4. Frontend: Node/React (or Next.js) scaffold, Leaflet, Recharts installed; `mocks/` folder populated first against the frozen API contract.
+4. Frontend: Next.js scaffold, `design-system.md` tokens wired as the theme (colors/radii/type) before any page is built, MapLibre GL JS (globe/terrain mode) for the Home view, three.js + `@react-three/fiber`/`drei` + Recharts installed; `mocks/` folder populated first against the frozen API contract.
+4.5. Terrain pipeline smoke test: take the hero dam's SRTM tile (from `important-dam-locations.md`), generate one terrain-RGB tile set and one glTF mesh, confirm it loads in `Scene3DViewport` before any simulation page is built on top of it — this is the one new preprocessing step 3D-only rendering adds, and per C5/C22 it should be de-risked early rather than discovered late.
 5. Hydrodynamic Engine: stand up the adapter interface and the surrogate implementations for SPH and Delft3D first (unblocks every downstream module); attempt real-model wrappers only once the surrogate path is fully wired end-to-end.
 6. Evacuation/routing: `networkx`, `osmnx` installed; pull the demo region's real road network via `osmnx` early, since large-area pulls can be slow.
 7. Wire data layer → missing-data diagnostic → scenario generator → hydrodynamic engine → flood digital twin → uncertainty/satellite-validation → risk/evacuation → emergency decision → API, in that order, matching `PRD.md` Phases 1–6.

@@ -75,6 +75,10 @@ DAM + RESERVOIR INPUT   BREACH PARAMETERS   DEM + RIVER + LAND-USE + SATELLITE (
 
 Full architectural detail is in [`docs/architecture.md`](docs/architecture.md).
 
+## Home / Command Center
+
+The dashboard opens on a single 3D India view — dam markers over real terrain, a radial vignette keeping focus on the country rather than the full globe, and a side list of every registered dam as a status-tagged card. Hovering or clicking a marker surfaces a quick health brief; clicking a marker or its card dynamically routes into that dam's own hub, where live stats, expandable graphs, and the full 3D simulation suite live. Full spec: [`docs/frontend_spec.md`](docs/frontend_spec.md) §1–2; visual language: [`docs/design-system.md`](docs/design-system.md).
+
 ## Features
 
 Mapped to the master prompt's 12 "unique features":
@@ -97,7 +101,8 @@ Mapped to the master prompt's 12 "unique features":
 | Layer | Tools |
 |---|---|
 | Frontend | React / Next.js |
-| Map | Leaflet or MapLibre |
+| Home 3D globe | MapLibre GL JS (3D globe + terrain mode) |
+| Per-dam 3D scene | three.js + `@react-three/fiber`/`drei` (terrain mesh, flood layers, drone free-fly camera) |
 | Backend | Python, FastAPI |
 | Geospatial processing | GDAL, GeoPandas, Rasterio, Shapely |
 | Database | PostgreSQL + PostGIS |
@@ -117,7 +122,8 @@ Full rationale, data formats, and setup order in [`docs/tech_stack.md`](docs/tec
 | [`docs/constraints.md`](docs/constraints.md) | Technical/timeline/fidelity constraints, locked assumptions, known limitations |
 | [`docs/architecture.md`](docs/architecture.md) | End-to-end system architecture and component ownership |
 | [`docs/api_endpoints.md`](docs/api_endpoints.md) | Full API reference, user roles, and permission matrix |
-| [`docs/frontend_spec.md`](docs/frontend_spec.md) | All 18 dashboard pages mapped to API endpoints |
+| [`docs/design-system.md`](docs/design-system.md) | Visual language: color palette, shape/radius system, typography — applies to every page |
+| [`docs/frontend_spec.md`](docs/frontend_spec.md) | Home/Command Center + 17 dam-scoped pages, all 3D-only, mapped to API endpoints |
 | [`docs/important-dam-locations.md`](docs/important-dam-locations.md) | Reference dam/river locations and DEM bounding boxes for the demo |
 
 ## User Roles
@@ -147,7 +153,7 @@ flood-guard-ai/
 ├── risk-and-evacuation/     # Priority engine, time-to-flood, dynamic road safety, route/shelter logic
 ├── emergency-decision/      # Action-list generator, explainability engine
 ├── backend/                 # FastAPI app, routers, DB models, auth, Celery workers
-└── frontend/                # React/Next.js app, mock fixtures, map layers, 18 dashboard pages
+└── frontend/                # React/Next.js app, mock fixtures, 3D scene layers, Home + dam-scoped pages
 ```
 
 ## Getting Started
@@ -168,7 +174,7 @@ npm run dev
 
 ## Important Notes
 
-Flood-Guard AI is a hackathon prototype. SPH and Delft3D are integrated behind an adapter layer that clearly distinguishes **Real Model Mode** (actual physics engine, slower — "Accuracy Mode") from **Demo/Surrogate Mode** (fast mathematical approximation for live-demo responsiveness — "Rapid Response Mode"). The dashboard always labels which mode produced a given result. Real-time dam sensor monitoring, real historical dam-failure validation data, and full data-assimilation are out of scope for the prototype — see [`docs/constraints.md`](docs/constraints.md) for the complete, honest list of what's real vs. simplified in the current build.
+Flood-Guard AI is a hackathon prototype. SPH and Delft3D are integrated behind an adapter layer that clearly distinguishes **Real Model Mode** (actual physics engine, slower — "Accuracy Mode") from **Demo/Surrogate Mode** (fast mathematical approximation for live-demo responsiveness — "Rapid Response Mode"). The dashboard always labels which mode produced a given result. Real-time dam sensor monitoring, real historical dam-failure validation data, and full data-assimilation are out of scope for the prototype — see [`docs/constraints.md`](docs/constraints.md) for the complete, honest list of what's real vs. simplified in the current build. Every map/scene surface is 3D-only, built on real DEM-derived terrain, including a free-fly "drone view" camera mode; this raises the GPU/preprocessing bar over a flat 2D map and is a deliberate, documented trade-off (`constraints.md` C22–C23), not an accident of scope creep.
 
 ## Team
 

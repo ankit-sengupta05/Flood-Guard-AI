@@ -70,6 +70,7 @@ Static + pulled-on-demand inputs, versioned per `dam_id`:
 - **Dam/reservoir registry** — location, height, reservoir capacity/water level, inflow/outflow, catchment rainfall if available.
 - **Environment layers** — DEM (SRTM/ASTER or other open DEM), river network geometry, terrain slope, river width/depth/geometry, land-use/land-cover, and village/road/bridge/building/shelter/critical-infrastructure layers, loaded once per dam during registration.
 - **Satellite imagery** — Sentinel/Landsat pulled via the Google Earth Engine Python API, on demand or for a configured before/after window per scenario.
+- **3D terrain assets** — generated once per dam, immediately after the DEM/environment layers above are ingested: a decimated glTF terrain mesh (for the three.js `Scene3DViewport`) and a terrain-RGB tile set (for the MapLibre 3D globe on the Home/Command Center). This is a rendering derivative of the same DEM already ingested, not a second data source — see `tech_stack.md` §1–2 and `constraints.md` C22.
 
 ### 2.2 Data Preprocessing
 Normalizes and clips all of the above to the dam's area of interest (per the bounding boxes in `important-dam-locations.md`), reprojects to one consistent coordinate reference per dam, and prepares the DEM/river network for the Hydrodynamic Engine.
@@ -120,10 +121,12 @@ Three tightly-linked components:
 - Provides an **Explainability** layer: for any recommendation, an "Explain This Result" view surfaces the input data used, model/scenario used, assumptions applied, confidence, and validation score — backed by the Assumption Log, Scenario History, and Simulation Log, each exportable in the audit report.
 
 ### 2.12 Dashboard & Exports
-- 18-page web dashboard (full list in `frontend_spec.md`): command center, scenario builder, dam/river input, SPH simulation, Delft3D simulation, model comparison, flood map, time-to-flood map, probability/uncertainty, satellite validation, damage assessment, evacuation planner, dynamic route safety, emergency priority list, AI explanation, simulation history, assumptions & data quality, export center.
+- One Home/Command Center entry point (a 3D India globe/terrain view, dam markers, and a live dam list) plus, per dam, a dynamically-routed set of 17 further pages (full list and per-page detail in `frontend_spec.md`): scenario builder, dam/river input, SPH simulation, Delft3D simulation, model comparison, flood map, time-to-flood map, probability/uncertainty, satellite validation, damage assessment, evacuation planner, dynamic route safety, emergency priority list, AI explanation, simulation history, assumptions & data quality, export center.
+- Every map/scene surface across all 18 pages is 3D-only (`constraints.md` C22), rendered through one shared `Scene3DViewport` component — no page maintains its own 2D map instance.
+- Visual language (color, shape, motion) follows `design-system.md` uniformly — a capped 2–3 color palette and circular/pill-radius components across every page, not per-page styling.
 - Consumes only backend API data — a pure client of the API layer defined in `api_endpoints.md`; it never computes risk, priority, or evacuation logic client-side.
 - Exports: SHP, KML, GeoJSON, CSV, and a PDF emergency report assembled from scenario, inputs, assumptions, flood extent, affected areas, priority locations, evacuation plan, recommended actions, confidence, and validation result.
-- **Offline/Low-Connectivity mode**: the dashboard can pre-download a scenario's map, results, and evacuation plan for offline viewing and offline report generation, syncing any field changes when connectivity returns.
+- **Offline/Low-Connectivity mode**: the dashboard can pre-download a scenario's terrain mesh/tiles, results, and evacuation plan for offline viewing and offline report generation, syncing any field changes when connectivity returns.
 
 ## 3. Component Ownership (avoids team conflicts)
 

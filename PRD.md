@@ -34,7 +34,7 @@ One-line USP: *An uncertainty-aware Flood Digital Twin that combines hydrodynami
 - G12: Convert simulation output into an Emergency Decision Engine that answers what happened, who is affected, where/when to act, and which route/shelter to use — not raw numbers alone.
 - G13: Make every output auditable: an "Explain This Result" trail showing inputs, model, scenario, assumptions, confidence, and validation score per recommendation, plus an Assumption Log and Simulation History.
 - G14: Support exports in SHP, KML, GeoJSON, CSV, and a PDF emergency report.
-- G15: Present the system through an 18-page command-center dashboard (see `frontend_spec.md`) built against a documented API contract (`api_endpoints.md`) so frontend/backend/simulation teams can work in parallel.
+- G15: Present the system through a 3D-only command-center dashboard — a Home view (India terrain/globe, dam markers, live status cards) plus a dynamically-routed hub of 17 further pages per dam (see `frontend_spec.md`) built against a documented API contract (`api_endpoints.md`) so frontend/backend/simulation teams can work in parallel.
 
 ## 6. Non-Goals (Out of Scope for the Prototype)
 
@@ -131,11 +131,12 @@ Full permission matrix in `api_endpoints.md`. Functional requirements below are 
 
 ### 8.16 Exports & Dashboard
 - FR16.1: Support SHP, KML, GeoJSON, and CSV export of flood/impact/evacuation layers, and a PDF emergency report (scenario, inputs, assumptions, flood extent, affected areas, priority locations, evacuation plan, recommended actions, confidence, validation result).
-- FR16.2: Present all of the above through the 18-page dashboard defined in `frontend_spec.md`, consuming only the documented API — no client-side computation of risk, priority, or evacuation logic.
+- FR16.2: Present all of the above through the dashboard defined in `frontend_spec.md` (Home + per-dam pages), consuming only the documented API — no client-side computation of risk, priority, or evacuation logic.
+- FR16.3: Every map/scene surface renders as a real 3D environment (terrain mesh/globe, per `tech_stack.md` §1) with a toggleable free-fly "drone view" camera — no 2D flat-map surface exists anywhere in the product (`constraints.md` C22–C23). Visual styling across all pages follows one shared, capped 2–3 color palette and one shape system (`design-system.md`), not per-page styling.
 
 ## 9. Non-Functional Requirements
 
-- NFR1: Runs in a standard modern browser; responsive design, desktop-primary, usable on tablet.
+- NFR1: Runs in a standard modern browser with WebGL support (required by the 3D-only dashboard, `constraints.md` C22); responsive design, desktop-primary, usable on tablet with a reduced-detail terrain LOD where needed.
 - NFR2: Simulation runtime is honestly stated: Accuracy Mode may take minutes; Rapid Response Mode is near-instant via precomputed/surrogate approximation — the dashboard always labels which was used (never implied to be faster/more rigorous than it is).
 - NFR3: Map/timeline playback of a completed scenario (time-slider scrubbing across timesteps) must feel responsive, achieved via precomputed per-timestep grids, not live physics per frame.
 - NFR4: All tools used are free/open-source or free-tier, suitable for a hackathon team with no budget.
@@ -146,7 +147,7 @@ Full permission matrix in `api_endpoints.md`. Functional requirements below are 
 ## 10. Phased Breakdown (Final Build Order)
 
 ### Phase 0 — Setup & Contracts (Days 1–2)
-1. Freeze `architecture.md`, `api_endpoints.md`, and `frontend_spec.md` as the shared contract.
+1. Freeze `architecture.md`, `api_endpoints.md`, `frontend_spec.md`, and `design-system.md` as the shared contract.
 2. Set up repo structure (data-layer, scenario-engine, hydrodynamic-engine, flood-digital-twin, uncertainty-engine, satellite-validation, risk-and-evacuation, emergency-decision, backend, frontend, docs).
 3. Both teams begin against mock JSON fixtures matching documented response shapes.
 4. Select the "hero dam" for the full pipeline demo from `important-dam-locations.md`, plus 2–4 lighter dams to populate the map.
