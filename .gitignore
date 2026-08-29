@@ -1,0 +1,48 @@
+# Python virtual environments
+**/.venv/
+**/venv/
+**/env/
+**/.virtualenv/
+**/virtualenv/
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+
+# Environment files
+**/.env
+**/.env.*
+**/*.env
+**/*.local
+
+# Node / frontend
+**/node_modules/
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/.next/
+**/dist/
+**/build/
+**/.cache/
+
+# OS/editor junk
+**/.DS_Store
+**/Thumbs.db
+**/.idea/
+**/.vscode/
+**/*.swp
+**/*.tmp
+
+# Logs
+**/*.log
+
+# Local generated data
+**/dam_heightmaps/**
+**/downloads/
+**/cache/
+
+# Python packaging
+**/.eggs/
+**/*.egg-info/
+**/.ipynb_checkpoints/
