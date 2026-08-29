@@ -1,0 +1,117 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --surface-base: #0B0E12;
+  --surface-raised: #151A21;
+  --surface-overlay: #1A222D;
+  --surface-hover: #222B38;
+  
+  --ink: #F4F6F8;
+  --ink-muted: #8A94A3;
+  --ink-dim: #5A6474;
+
+  --accent: #FF6A3D;
+  --accent-hover: #FF825C;
+  --accent-dim: rgba(255, 106, 61, 0.16);
+  --accent-glow: rgba(255, 106, 61, 0.35);
+
+  --priority-high: #FF6A3D;
+  --priority-medium: #38BDF8;
+  --priority-low: #94A3B8;
+  
+  --radius-pill: 999px;
+  --radius-card: 28px;
+  --radius-panel: 20px;
+  --radius-control: 14px;
+
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--surface-base);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Glassmorphism containers */
+.glass-panel {
+  background: rgba(21, 26, 33, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.glass-card {
+  background: rgba(30, 37, 48, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-card:hover {
+  background: rgba(34, 43, 56, 0.8);
+  border-color: rgba(255, 106, 61, 0.3);
+  transform: translateY(-2px);
+}
+
+/* Radial Vignette for 3D Viewport */
+.radial-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    transparent 50%,
+    rgba(11, 14, 18, 0.4) 80%,
+    rgba(11, 14, 18, 0.9) 100%
+  );
+  z-index: 10;
+}
+
+/* Monospaced numerals */
+.tabular-nums {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Custom Pulsing Badge */
+@keyframes pulse-ring {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.15); opacity: 0.3; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+.pulse-accent {
+  animation: pulse-ring 2s infinite ease-in-out;
+}
