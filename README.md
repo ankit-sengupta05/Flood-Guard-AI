@@ -1,71 +1,112 @@
-# BreachWatch
+# Flood-Guard AI
 
-**AI-powered dam health monitoring, breach simulation, and flood early-warning platform.**
-Built for Smart India Hackathon 2026.
+**An uncertainty-aware Dam-Break Digital Twin for predictive flood modelling, satellite validation, and intelligent emergency decision support.**
+Built for Smart India Hackathon 2026 — Problem Statement SIH26161 (NTRO): *"Dam Break Inundation Modelling Using Hydrodynamic Modelling of Any River."*
 
-BreachWatch continuously monitors dam health using sensor, weather, and satellite/drone data, predicts failure risk with an AI model, and — when risk crosses a threshold — simulates the dam breach, routes the resulting flood across terrain, identifies affected villages/roads/buildings via GIS, generates evacuation plans, and issues early-warning alerts. Everything is presented through an interactive web dashboard: an India-focused map of registered dams, live health stats, and a 3D breach/flood simulation you can scrub through in real time.
+Flood-Guard AI is **not** another dam-break-to-flood-map tool. Given a dam, a reservoir state, and a breach scenario, it runs a hydrodynamic simulation, predicts not just *where* the flood goes but *when* it arrives and *how confident* the system is, validates its own prediction against satellite imagery, and converts all of that into a time-aware evacuation plan and a ranked emergency action list — with every recommendation auditable back to the inputs and assumptions that produced it.
 
 ## The Problem
 
-Dam failures are rare but catastrophic. Monitoring today is largely manual and periodic, and even where hydraulic simulation tools exist, they're disconnected from real-time risk detection and from any interface disaster-management authorities or the public can actually act on. BreachWatch closes that loop end-to-end: **detect → predict → simulate → assess impact → plan evacuation → alert.**
+Existing dam-break/flood tools generally stop at:
+
+```
+Dam Break → Flood Map
+```
+
+That leaves the actual decisions — who evacuates first, which road is still safe, how sure are we — unanswered. Flood-Guard AI closes that gap:
+
+```
+Dam Break → Hydrodynamic Simulation → Flood Prediction → Arrival-Time Prediction
+    → Uncertainty Analysis → Satellite Validation → Risk Prioritization
+    → Dynamic Evacuation Planning → Emergency Decision Support
+```
+
+The system is designed to answer, for any dam and river in India:
+
+1. Where will the water go? 2. How fast will it move? 3. How deep will it get?
+4. When will it reach each location? 5. How confident are we? 6. Who is most at risk?
+7. Which roads/bridges will become unsafe, and when? 8. Which evacuation routes remain safe?
+9. Which shelters are reachable? 10. Where should emergency teams deploy first?
+11. How does the prediction compare against satellite-observed flood extent?
 
 ## How It Works
 
 ```
-🌧️ Weather + 🛰️ Satellite + 📡 Sensors + 🏞️ Terrain
-                    ↓
-              Dam Health AI
-                    ↓
-             Failure Risk Score
-                    ↓
-        ┌───────────┴───────────┐
-       Safe                 High Risk
-                                 ↓
-                       Dam Break Simulation
-                                 ↓
-                       Hydrodynamic Model
-                                 ↓
-              ┌──────────┬──────────┐
-            Depth     Velocity    Arrival Time
-              └──────────┼──────────┘
-                         ↓
-                    GIS Impact Engine
-                         ↓
-           ┌─────────────┼─────────────┐
-        Villages        Roads       Buildings
-           └─────────────┼─────────────┘
-                         ↓
-                Evacuation Route Engine
-                         ↓
-               🚨 Early Warning System
-                         ↓
-              📱 Dashboard / Alerts
+DAM + RESERVOIR INPUT   BREACH PARAMETERS   DEM + RIVER + LAND-USE + SATELLITE (GEE)
+         │                      │                          │
+         └──────────────────────┴───────────┬──────────────┘
+                                             ▼
+                                  DATA LAYER → PREPROCESSING
+                                             ▼
+                                     SCENARIO GENERATOR
+                              (best-case / most-likely / worst-case,
+                               ensemble runs for missing/uncertain inputs)
+                                             ▼
+                                  HYDRODYNAMIC ENGINE
+                                 ┌──────────┴──────────┐
+                               SPH                  Delft3D
+                        (breach-zone particles)   (grid-based propagation)
+                                 └──────────┬──────────┘
+                                             ▼
+                                   FLOOD DIGITAL TWIN
+                             Depth │ Velocity │ Arrival Time
+                                             ▼
+                        ┌────────────────────┼────────────────────┐
+                        ▼                    ▼                    ▼
+              UNCERTAINTY ENGINE     SATELLITE VALIDATION     RISK ENGINE
+              (probability/          (GEE Sentinel/Landsat    (priority score:
+               confidence maps)       vs. simulated extent,    depth+velocity+
+                                       IoU/agreement)           arrival+population+
+                                                                 infrastructure)
+                        └────────────────────┼────────────────────┘
+                                             ▼
+                                  EVACUATION INTELLIGENCE
+                       (time-to-flood map, dynamic road/bridge safety,
+                        safest & fastest routes, shelter reachability)
+                                             ▼
+                                EMERGENCY DECISION ENGINE
+                        (who/where/when/which-route, ranked action list,
+                         explainability: "why is Village A Priority 1?")
+                                             ▼
+                                       DASHBOARD
+                     (command-center map, model comparison, exports:
+                              SHP / KML / GeoJSON / CSV / PDF)
 ```
 
 Full architectural detail is in [`docs/architecture.md`](docs/architecture.md).
 
 ## Features
 
-- **Dam Health AI** — combines live sensor readings (water level, seepage, deformation, pore pressure), rainfall/forecast data, and computer-vision analysis of satellite/drone imagery (cracks, erosion, landslide risk) into a single Failure Risk Score per dam.
-- **Automatic breach simulation** — when risk crosses a configurable threshold, an ML model predicts breach parameters (failure time, breach width, peak outflow) without needing a full physics rerun, then routes the flood across the dam's terrain.
-- **GIS impact analysis** — overlays the flood simulation against registered villages, roads, and buildings to determine what's affected and when.
-- **Automatic evacuation planning** — generates evacuation routes that avoid predicted-flooded roads, prioritized by time-to-impact.
-- **Early warning system** — issues alerts (dashboard, with SMS/siren as available integrations) as soon as any village is flagged at-risk.
-- **Interactive dashboard** — an India-focused map with dam markers color-coded by risk status, a browsable registry of dams as cards, and a per-dam detail view with live stats, health graphs, and an interactive 3D breach/flood simulation with a time slider.
+Mapped to the master prompt's 12 "unique features":
+
+- **Multi-scenario simulation** — best-case / most-likely / worst-case runs generated automatically from reservoir level, breach width, and breach formation time, plus user-editable parameters.
+- **Uncertainty-aware prediction** — where an input (e.g. breach width) is unknown, the system runs an ensemble across plausible values and reports flood probability + confidence (High/Medium/Low) per location, rather than a single false-precision answer.
+- **Time-to-flood mapping** — arrival-time bands (0–15 min, 15–30 min, 30–60 min, 1–3 hr) per location, not just a binary flooded/not-flooded map.
+- **Dynamic road & bridge safety** — every road/bridge segment is evaluated as a function of time against predicted depth/velocity, so a route "safe now" but unsafe in 20 minutes is flagged before it's used.
+- **Smart evacuation engine** — cross-references flood arrival time against travel time to the nearest reachable shelter per village, and recommends immediate evacuation, road evacuation, high-ground evacuation, or rescue-priority accordingly.
+- **Emergency priority engine** — a single ranked action list across all affected villages, scored on flood probability, depth, velocity, arrival time, population, and infrastructure/road accessibility — not depth alone.
+- **Missing-data diagnostic** — detects missing dam/breach parameters, documents the fallback assumption used, runs an ensemble instead of guessing silently, and logs it in a visible Assumption Log.
+- **Satellite validation** — Sentinel/Landsat imagery via Google Earth Engine is used to extract observed water extent and compare it against the simulated flood extent (IoU, agreement %, over/under-prediction zones).
+- **Forecast updating** — a documented (prototype-level) mechanism to fold new satellite observations or rainfall data into an updated prediction.
+- **Offline / low-connectivity mode** — pre-downloadable scenario data and cached results so a field team can view results and generate a report without live connectivity, syncing later.
+- **Emergency decision engine** — turns raw numbers ("depth = 4.2 m") into an action ("Evacuate Immediately — Use Route C — Move to Shelter B").
+- **Auditability & explainability** — every recommendation carries an "Explain This Result" trail: inputs used, model/scenario, assumptions, confidence, and validation score.
 
 ## Tech Stack
 
 | Layer | Tools |
 |---|---|
-| Terrain | Gaea / World Machine |
-| Breach & flood physics | HEC-RAS 2D / ANUGA |
-| Dam Health AI | scikit-learn / XGBoost, CV model (torchvision) |
-| Evacuation routing | networkx + osmnx |
-| Backend | FastAPI, PostgreSQL + PostGIS + TimescaleDB |
-| Frontend | React + TypeScript, Three.js, Leaflet, Recharts |
-| Auth | JWT with role/scope-based permissions |
+| Frontend | React / Next.js |
+| Map | Leaflet or MapLibre |
+| Backend | Python, FastAPI |
+| Geospatial processing | GDAL, GeoPandas, Rasterio, Shapely |
+| Database | PostgreSQL + PostGIS |
+| Task/queue processing | Celery + Redis |
+| Remote sensing | Google Earth Engine Python API |
+| Hydrodynamic engines | SPH (breach-zone) + Delft3D (propagation), behind a Real-Model/Demo-Surrogate adapter layer |
+| AI components | Scenario recommendation, missing-data ensemble logic, priority scoring, NL explanation grounded in simulation DB (no hallucinated numbers) |
 
-Full rationale and setup order in [`docs/tech_stack.md`](docs/tech_stack.md).
+Full rationale, data formats, and setup order in [`docs/tech_stack.md`](docs/tech_stack.md).
 
 ## Documentation
 
@@ -76,36 +117,42 @@ Full rationale and setup order in [`docs/tech_stack.md`](docs/tech_stack.md).
 | [`docs/constraints.md`](docs/constraints.md) | Technical/timeline/fidelity constraints, locked assumptions, known limitations |
 | [`docs/architecture.md`](docs/architecture.md) | End-to-end system architecture and component ownership |
 | [`docs/api_endpoints.md`](docs/api_endpoints.md) | Full API reference, user roles, and permission matrix |
-| [`docs/frontend_spec.md`](docs/frontend_spec.md) | Screen-by-screen frontend spec mapped to API endpoints |
+| [`docs/frontend_spec.md`](docs/frontend_spec.md) | All 18 dashboard pages mapped to API endpoints |
+| [`docs/important-dam-locations.md`](docs/important-dam-locations.md) | Reference dam/river locations and DEM bounding boxes for the demo |
 
 ## User Roles
 
 | Role | Who |
 |---|---|
-| `PUBLIC` | Anyone viewing the map/dashboard |
-| `CITIZEN` | Registered resident subscribing to alerts |
-| `DAM_OPERATOR` | Manages specific dam(s) |
-| `DISTRICT_ADMIN` | Manages all dams in a district, approves evacuation plans and alerts |
-| `SYSTEM_ADMIN` | Full platform access |
+| `PUBLIC` | Anyone viewing published scenarios on the dashboard |
+| `ANALYST` | Builds/runs scenarios for a dam (student/researcher/dam operator equivalent) |
+| `EMERGENCY_MANAGER` | District/HADR authority — approves evacuation plans, issues action lists, uses offline mode in the field |
+| `SYSTEM_ADMIN` | Full platform access — manages dam registry, data sources, thresholds |
 
 Full permission matrix in [`docs/api_endpoints.md`](docs/api_endpoints.md).
 
 ## Repository Structure
 
 ```
-breachwatch/
-├── docs/                # PRD, tech stack, constraints, architecture, API spec, frontend spec
-├── ingestion/           # Sensor + rainfall data ingestion
-├── dam-health-ai/       # CV anomaly detection + risk scoring models
-├── simulation/          # Terrain, breach ML model, hydrodynamic routing
-├── gis-evacuation/      # GIS impact engine + evacuation route engine
-├── backend/             # FastAPI app, routers, DB models, auth
-└── frontend/            # React + TypeScript app, mock fixtures, Three.js scene
+flood-guard-ai/
+├── docs/                    # PRD, tech stack, constraints, architecture, API spec, frontend spec
+├── data-layer/              # DEM, river network, land-use, dam/reservoir registry, GEE ingestion
+├── scenario-engine/         # Scenario generator, missing-data diagnostic, assumption log
+├── hydrodynamic-engine/
+│   ├── sph/                 # SPH adapter (real model + surrogate)
+│   └── delft3d/             # Delft3D adapter (real model + surrogate)
+├── flood-digital-twin/      # Depth/velocity/arrival-time grid store + timestep API
+├── uncertainty-engine/      # Ensemble runner, probability/confidence maps
+├── satellite-validation/    # GEE water extraction, IoU/agreement, difference maps
+├── risk-and-evacuation/     # Priority engine, time-to-flood, dynamic road safety, route/shelter logic
+├── emergency-decision/      # Action-list generator, explainability engine
+├── backend/                 # FastAPI app, routers, DB models, auth, Celery workers
+└── frontend/                # React/Next.js app, mock fixtures, map layers, 18 dashboard pages
 ```
 
 ## Getting Started
 
-> Setup instructions will be filled in as each module comes online — see [`docs/tech_stack.md`](docs/tech_stack.md) section 5 for the full setup order (Python/simulation env, database extensions, frontend scaffold).
+> Setup instructions will be filled in as each module comes online — see [`docs/tech_stack.md`](docs/tech_stack.md) section 5 for the full setup order.
 
 ```bash
 # Backend
@@ -121,7 +168,7 @@ npm run dev
 
 ## Important Notes
 
-BreachWatch is a hackathon prototype. Sensor, weather, and satellite imagery data are simulated for the demo (no real dam hardware is wired in), and the breach/risk models are built on established engineering approximations and simulated scenarios rather than real historical failure data. These are deliberate, documented scoping decisions — see [`docs/constraints.md`](docs/constraints.md) for the full list of what's real vs. simulated in the current build.
+Flood-Guard AI is a hackathon prototype. SPH and Delft3D are integrated behind an adapter layer that clearly distinguishes **Real Model Mode** (actual physics engine, slower — "Accuracy Mode") from **Demo/Surrogate Mode** (fast mathematical approximation for live-demo responsiveness — "Rapid Response Mode"). The dashboard always labels which mode produced a given result. Real-time dam sensor monitoring, real historical dam-failure validation data, and full data-assimilation are out of scope for the prototype — see [`docs/constraints.md`](docs/constraints.md) for the complete, honest list of what's real vs. simplified in the current build.
 
 ## Team
 

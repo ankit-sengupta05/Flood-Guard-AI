@@ -1,115 +1,146 @@
-# Tech Stack — Dam Breakage Simulation & Early Warning Platform (SIH 2026)
+# Tech Stack — Flood-Guard AI (SIH 2026, PS 26161)
+
+This stack follows the master prompt's recommended architecture directly (React/Next.js, Leaflet/MapLibre, FastAPI, GDAL/GeoPandas/Rasterio/Shapely, PostgreSQL+PostGIS, Celery/Redis, Google Earth Engine), with the SPH/Delft3D hydrodynamic layer sitting behind an adapter so a genuine physics run and a demo surrogate are interchangeable without touching downstream code.
 
 ## 1. Stack Summary Table
 
 | Layer | Tool | Alternative | Notes |
 |---|---|---|---|
-| Terrain sculpting | Gaea (free tier) or World Machine | Houdini, QGIS (if real-world DEM) | Per-dam terrain, exported as heightmap |
-| Breach physics | HEC-RAS 2D (breach module) | ANUGA (Python-native) | ANUGA preferred if batch-scripting many scenarios for ML training data |
-| Flood routing | HEC-RAS 2D or ANUGA | TELEMAC-MASCARET | Outputs depth/velocity/arrival-time grids |
-| Breach ML model | scikit-learn / XGBoost / LightGBM | PyTorch (only if dataset is large) | Tabular regression: dam params → breach outcome |
-| Dam Health AI — risk scoring | scikit-learn / XGBoost, or a small PyTorch model if time-series depth is needed | LSTM (PyTorch) for sequence-based risk trend modeling | Combines sensor + rainfall + CV anomaly score into one Failure Risk Score |
-| Dam Health AI — CV anomaly detection | Pretrained CNN (e.g., ResNet/EfficientNet via `torchvision`), fine-tuned | YOLO (if bounding-box crack/anomaly localization is wanted) | Fine-tune on sample crack/deformation imagery; use a heuristic/rule-based placeholder if time is short |
-| Data ingestion / time-series storage | FastAPI + PostgreSQL (with TimescaleDB extension) | InfluxDB | TimescaleDB keeps everything in one Postgres instance instead of a separate time-series DB |
-| GIS Impact Engine | Python (`geopandas`, `rasterio`, `shapely`) | PostGIS spatial queries | Overlay village/road/building layers against depth/arrival rasters |
-| Evacuation Route Engine | Python (`networkx` for road-graph shortest path) + `osmnx` (if using OpenStreetMap road data) | Custom Dijkstra implementation | `osmnx` pulls real Indian road network data for the demo region |
-| Backend/API | FastAPI | Flask/Django | Async-friendly; single Python codebase across ML, simulation, and API layers |
-| Database | PostgreSQL + PostGIS + TimescaleDB | Separate Postgres + InfluxDB + Mongo | One database technology minimizes ops overhead for a hackathon team |
-| Auth | FastAPI + JWT (e.g., `python-jose`) + role/scope claims | Auth0 (free tier) | Self-rolled JWT is simpler to customize for the 5-role permission matrix |
-| 3D web rendering | Three.js | deck.gl, CesiumJS | Three.js for custom/sculpted per-dam terrain; CesiumJS is the swap-in if using real-world geo terrain instead |
-| Map view (India, dam markers) | Leaflet or Mapbox GL JS (free tier) | Google Maps JS API | Leaflet is free/open-source and sufficient for marker + popup use cases |
-| Frontend framework | React + TypeScript | — | Component structure fits map, cards, tabs, forms |
-| Charts/dashboard | Recharts | Plotly.js, Chart.js | Sensor history graphs, risk trend graphs |
-| Real-time-ish updates | Polling (`setInterval` + REST) | WebSockets (FastAPI supports natively) | WebSockets are the correct upgrade if live risk-score/alert push is a priority feature to demo; polling is the simpler fallback |
-| Notifications | Web push (dashboard) + mocked SMS/siren interface | Twilio (free trial tier) for real SMS | Use Twilio only if trial credits comfortably cover the demo; otherwise mock and state so clearly in the report |
-| Detailed 3D models (dam, buildings) | Blender (optional) | — | Export via glTF into Three.js scene |
+| Frontend framework | React / Next.js | — | Next.js if SSR/routing across 18 dashboard pages is worth the setup; plain React + Vite if the team wants a lighter build |
+| Map | Leaflet | MapLibre GL JS | Leaflet is free/open-source, no API key, sufficient for markers, layers, and a timeline slider; MapLibre if vector-tile styling for the flood-extent/velocity layers is wanted |
+| Backend/API | Python, FastAPI | Flask/Django | Async-friendly; one Python codebase spans API, geospatial processing, and simulation-adapter glue |
+| Geospatial processing | GDAL, GeoPandas, Rasterio, Shapely | PostGIS-only spatial queries | Used for DEM clipping/reprojection, raster↔vector conversion, and the village/road/building overlay logic in the Risk Engine |
+| Database | PostgreSQL + PostGIS | Separate spatial DB | One database for dam registry, scenarios, grids metadata, impact records, evacuation plans, alerts/priority lists |
+| Task/queue processing | Celery + Redis | RQ, Dramatiq | SPH/Delft3D runs, GEE pulls, and ensemble (uncertainty) runs are queued/async jobs, not request-blocking calls |
+| Remote sensing | Google Earth Engine Python API | Sentinel Hub API | GEE gives free, scriptable access to Sentinel/Landsat plus SRTM-derived products for both satellite validation and near-real-time flood analysis |
+| SPH engine | Adapter over an open SPH implementation (e.g. `PySPH` or `DualSPHysics` where feasible) | Simplified surrogate (shallow-water/kinematic approximation) if a full SPH run isn't feasible in the timeframe | Real Model Mode vs. Demo/Surrogate Mode, always labeled — never presented interchangeably |
+| Delft3D engine | Adapter over Delft3D / Delft3D-FM (Deltares, free for non-commercial/academic use) | Simplified 2D shallow-water surrogate (e.g. a lightweight `ANUGA` or raster-routing approximation) if Delft3D setup isn't feasible in time | Same Real/Surrogate labeling rule applies |
+| Hydrodynamic coupling | Custom adapter layer converting SPH near-field output into a discharge-vs-time hydrograph for Delft3D's boundary condition | Run independently only, and present as "comparison mode" if coupling isn't built in time | Document exactly which mode (independent vs. coupled) produced a given result |
+| Uncertainty/ensemble runner | Celery-orchestrated batch of Hydrodynamic Engine runs across a fallback parameter range | — | Aggregation (probability, confidence) done in `numpy`/`pandas` |
+| Evacuation routing | Python `networkx` (shortest path) + `osmnx` (OpenStreetMap road network) | Custom Dijkstra | `osmnx` pulls real Indian road-network data for the demo region; `networkx` recomputes shortest-path as road/bridge safety status changes over time |
+| Priority/decision scoring | Weighted scoring function (`pandas`/`numpy`) over documented factors (probability, depth, velocity, arrival time, population, infrastructure, accessibility) | Small `scikit-learn` model if the team wants a learned weighting | Kept as an explainable, inspectable formula by default — a black-box model works against the Explainability requirement (G13/FR12) unless its weights are also surfaced |
+| AI explanation / scenario assistant | LLM call (via Anthropic API or similar) constrained to retrieve figures from the simulation database and template them into an explanation | Rule-based templating only, if an LLM integration is out of scope | Must never fabricate a numeric result — retrieval-grounded only, per FR15.2 |
+| Auth | FastAPI + JWT (`python-jose`) with role claims | Auth0 (free tier) | Four roles (`PUBLIC`, `ANALYST`, `EMERGENCY_MANAGER`, `SYSTEM_ADMIN`), each scoped to specific `dam_ids` where relevant |
+| Charts/dashboard | Recharts | Plotly.js, Chart.js | Model-comparison charts, uncertainty confidence bars, risk-score/priority visualizations |
+| Offline mode | Service worker + IndexedDB (browser) caching a scenario's map tiles/results/evacuation plan | — | Pre-download triggered from the dashboard; PDF report generation must work from the cached payload without a live API call |
+| Exports | `geopandas`/`fiona` for SHP/GeoJSON, `simplekml` for KML, `pandas` for CSV, `WeasyPrint`/`ReportLab` for PDF | — | All export formats generated server-side from the same underlying scenario data, never hand-built per format |
 | Hosting (frontend) | Vercel or Netlify | GitHub Pages | Free tier |
-| Hosting (backend) | Render or Railway | Fly.io | Free tier; confirm it supports the Postgres extensions needed (PostGIS/TimescaleDB) |
-| Version control / collaboration | Git + GitHub, GitHub Projects/Issues for task tracking | — | Use the `api_endpoints.md` contract as the shared source of truth referenced in issues |
+| Hosting (backend) | Render or Railway | Fly.io | Free tier; confirm PostGIS extension support and enough memory/CPU headroom for Celery workers running simulation jobs |
+| Version control / collaboration | Git + GitHub, GitHub Projects/Issues | — | `api_endpoints.md` is the shared source of truth referenced in issues |
 
 ## 2. Why Each Choice, In Detail
 
-### Dam Health AI — two sub-models, kept separate
-The CV anomaly-detection model (imagery → structural anomaly score) and the risk-scoring model (sensors + rainfall + anomaly score → Failure Risk Score) are deliberately kept as two separate, independently-testable models rather than one end-to-end model. This matters for a hackathon: it lets you demo/validate each piece on its own (e.g., show the CV model correctly flagging a crack in a sample image, separately from showing the risk score responding to a rising water level), and lets different team members work on each without blocking each other.
+### Real Model Mode vs. Demo/Surrogate Mode — the central engineering decision
+Genuine SPH and Delft3D runs are heavy, often desktop-GUI-oriented tools not designed for a hackathon's compressed timeline or free-tier hosting. Rather than either (a) falsely claiming a simplified approximation is a full SPH/Delft3D run, or (b) not attempting the real tools at all, the adapter layer makes both paths implement the same interface (`run(scenario_params) -> {depth_grid, velocity_grid, arrival_time_grid, model_mode}`). This lets the team start immediately with the surrogate mode (needed for every other module to be buildable in parallel), and swap in a genuine SPH/Delft3D run later for the hero dam if time allows — without any downstream code (Flood Digital Twin, Risk Engine, Evacuation Intelligence) needing to change. `model_mode` is a first-class field in every response, and the dashboard is required to render it (NFR7).
 
-### TimescaleDB over a separate time-series database
-Sensor/risk-score data is fundamentally time-series, which normally argues for InfluxDB or similar. But running a second database technology adds real ops overhead for a small team on a deadline. TimescaleDB is a PostgreSQL extension — you get proper time-series query performance while keeping one database, one connection pool, and the ability to `JOIN` sensor data against dam metadata and GIS tables directly.
+### Why FastAPI end-to-end
+Ingestion, the simulation adapter, the uncertainty ensemble runner, the risk/evacuation logic, and the API itself are all naturally async/IO-bound (waiting on Celery jobs, GEE calls, DB queries) — one Python/FastAPI codebase avoids a polyglot backend for a small team.
 
-### Evacuation routing: networkx + osmnx
-`osmnx` pulls real OpenStreetMap road-network data for a given area (including Indian regions), which is far more convincing for a demo than hand-drawn road segments. `networkx` then runs shortest-path algorithms over that graph, with flooded road segments (from the GIS Impact Engine) removed/penalized before computing the route — this is a well-established, simple approach (weighted shortest-path avoiding blocked edges) rather than needing custom routing logic.
+### Why PostgreSQL + PostGIS (single database)
+Dam/reservoir metadata, scenario records, impact tables, evacuation plans, and priority lists are all relational and frequently joined against spatial geometry (villages, roads, buildings). PostGIS keeps geometry operations in the same database instead of running a second spatial store, minimizing ops overhead for a hackathon team.
 
-### Auth: self-rolled JWT vs. Auth0
-Given five custom roles with dam/district-scoped permissions (not just generic "admin/user"), a self-rolled JWT with custom claims (`role`, `dam_ids`, `district_ids`) is more directly controllable than fitting a five-role scoped system into a third-party auth provider's free tier. Auth0 remains a reasonable fallback if the team wants to save backend time and can work within its role-model constraints.
+### Why Celery + Redis for the simulation/ensemble/GEE jobs
+SPH/Delft3D runs (even surrogate ones) and GEE image pulls should never block an API request; they're queued jobs with a `status` the frontend polls (`queued` → `running` → `done`). Ensemble/uncertainty runs are naturally a batch of such jobs fanned out and aggregated on completion — Celery's task groups fit this directly.
 
-### Map: Leaflet over Mapbox/Google Maps
-Leaflet is free with no API key/usage-limit concerns, which matters for an unpredictable hackathon judging/demo environment. Mapbox GL JS is a reasonable upgrade if the team wants nicer default basemap styling and is comfortable with its free-tier usage limits.
+### Why Google Earth Engine over a generic satellite API
+GEE gives free, scriptable, pre-processed access to Sentinel-2/Sentinel-1 and Landsat imagery plus common derived products, without managing raw scene downloads — appropriate for both the Satellite Validation workflow (8.9 in `PRD.md`) and the standalone Near-Real-Time Flood Analysis workflow (FR14.1), and it is what the master prompt specifically calls out.
 
-### Real-time updates: start with polling, upgrade to WebSockets only if time allows
-Polling (frontend re-fetches `/dams` or `/dams/{id}/risk` every N seconds) is simpler to build and debug, and is genuinely sufficient for the NFR2-stated update interval (15-60 min risk recompute — polling every 30s-1min for the demo is more than fast enough to feel live). WebSockets are worth adding only as a polish item if there's spare time, since they add real complexity (connection lifecycle, reconnection handling) that isn't necessary to hit the stated requirements.
+### Why networkx + osmnx for evacuation routing
+`osmnx` pulls real OpenStreetMap road-network data for the demo region — materially more convincing to judges than hand-drawn segments — and `networkx` runs shortest-path with flooded/unsafe segments (from Dynamic Road & Bridge Safety) removed or penalized as of a given simulated time. Because road safety is time-dependent here (not a single static flooded-roads layer), the route recomputation is re-run per relevant timestep rather than once.
 
-### 3D/terrain layer — unchanged from the original flood-sim project
-Three.js (or CesiumJS if switching to real-world geo terrain), the breach ML model, and the hydrodynamic routing tools carry over directly from the earlier flood-simulation-only scope — this platform wraps that pipeline with the health-monitoring, GIS, evacuation, and alerting layers around it, rather than replacing it.
+### Why an explainable scoring formula over a black-box model for priority
+FR12/G13 require every recommendation to be explainable back to specific inputs. A documented weighted-sum formula (with the weights themselves visible on the Assumptions & Data Quality page) satisfies this directly; a trained black-box model would need its own separate explainability layer (e.g. SHAP) to meet the same bar, which is unnecessary complexity unless the team specifically wants to demonstrate that capability.
+
+### Why a retrieval-grounded LLM (if included) rather than a general chatbot
+The master prompt explicitly warns against "a useless generic chatbot." If a conversational layer is built, its only job is to answer scenario-specific questions by querying the simulation database and templating the retrieved numbers into a sentence — never generating a flood number itself.
+
+### Why service worker + IndexedDB for Offline Mode
+This keeps the offline capability inside the same web app (no native app build) — a scenario's tiles/results/evacuation plan are cached client-side on explicit "pre-download," and PDF report generation is implemented to run entirely against that cached payload so it works with no network at all.
 
 ## 3. Data Formats Between Stages
 
 | From | To | Format |
 |---|---|---|
-| Sensor gateway | Ingestion API | JSON per reading: `{dam_id, sensor_type, value, timestamp}` |
-| Rainfall API | Dam Health AI | JSON: current + forecast rainfall per catchment area |
-| Satellite/drone imagery | CV anomaly model | Image files (JPEG/PNG/GeoTIFF), processed on ingestion or on a schedule |
-| CV model | Risk-scoring model | Structural anomaly score (float, 0-1) + detected-anomaly metadata |
-| Risk-scoring model | Database + `/dams/{id}/risk` | `{risk_score, risk_status, timestamp}` |
-| Breach ML model | Hydrodynamic routing | Hydrograph (discharge vs. time) |
-| Hydrodynamic routing | Data processing script | GeoTIFF depth/velocity per timestep, one arrival-time GeoTIFF |
-| Data processing | Backend/frontend | Compressed JSON/binary array per timestep, referenced by `_ref` per `api_endpoints.md` conventions |
-| GIS Impact Engine | Evacuation Route Engine | Per-asset impact records (JSON) |
-| Evacuation Route Engine | Frontend | GeoJSON route geometries + per-village plan summary |
-| Any module | Alerts | `{dam_id, severity, message}` triggering `/alerts` |
+| Dam/reservoir + breach input | Missing-Data Diagnostic Engine | JSON scenario-input object; missing fields explicitly `null`, not omitted |
+| Missing-Data Diagnostic Engine | Scenario Generator | Same object, filled with fallback values + `assumptions: [...]` array |
+| Scenario Generator | Hydrodynamic Engine (Celery job) | JSON job payload: dam terrain/river refs + resolved scenario parameters |
+| SPH | Delft3D (coupled mode only) | Discharge-vs-time hydrograph, JSON array of `{t, discharge}` |
+| Hydrodynamic Engine | Flood Digital Twin | GeoTIFF depth/velocity per timestep + one arrival-time GeoTIFF, referenced by `_ref` |
+| Flood Digital Twin | Uncertainty Engine | Set of GeoTIFFs across ensemble members, keyed by `scenario_group_id` |
+| Flood Digital Twin | Satellite Validation | Simulated extent polygon (from thresholded depth grid) vs. GEE-extracted observed extent polygon |
+| Flood Digital Twin | Risk Engine | Depth/velocity/arrival grids + village/road/building/infrastructure vector layers |
+| Risk Engine | Evacuation Intelligence | Per-asset impact records (JSON) |
+| Evacuation Intelligence | Emergency Decision Engine | Per-village evacuation classification + recommended route/shelter (JSON) |
+| Emergency Decision Engine | Frontend | Ranked priority list (JSON) + per-item explainability payload |
+| Any module | Export Center | GeoTIFF/vector layers → SHP/KML/GeoJSON/CSV; full scenario bundle → PDF |
 
 ## 4. Suggested Repository Structure
 
 ```
-dam-platform/
+flood-guard-ai/
 ├── docs/
 │   ├── PRD.md
 │   ├── tech_stack.md
 │   ├── constraints.md
 │   ├── architecture.md
 │   ├── api_endpoints.md
-│   └── frontend_spec.md
-├── ingestion/
-│   ├── sensor_gateway.py
-│   └── rainfall_fetch.py
-├── dam-health-ai/
-│   ├── cv_anomaly_model/
-│   └── risk_scoring_model/
-├── simulation/
-│   ├── breach-ml/
-│   ├── terrain/                # per-dam heightmaps
-│   ├── physics/                # HEC-RAS/ANUGA project files, routing output
-│   └── data-processing/        # raster_to_json.py, village_impact.py
-├── gis-evacuation/
+│   ├── frontend_spec.md
+│   └── important-dam-locations.md
+├── data-layer/
+│   ├── dam_registry.py
+│   ├── dem_ingest.py            # SRTM/ASTER fetch + clip
+│   ├── gee_client.py            # Sentinel/Landsat pull via GEE Python API
+│   └── vector_layers/           # villages, roads, bridges, buildings, shelters
+├── scenario-engine/
+│   ├── missing_data_diagnostic.py
+│   ├── scenario_generator.py    # best/likely/worst-case + manual params
+│   └── assumption_log.py
+├── hydrodynamic-engine/
+│   ├── adapter.py               # common interface: real vs. surrogate
+│   ├── sph/
+│   │   ├── real_model/          # PySPH/DualSPHysics wrapper, if built
+│   │   └── surrogate/
+│   └── delft3d/
+│       ├── real_model/          # Delft3D-FM wrapper, if built
+│       └── surrogate/
+├── flood-digital-twin/
+│   ├── grid_store.py
+│   └── timestep_api.py
+├── uncertainty-engine/
+│   ├── ensemble_runner.py
+│   └── probability_confidence.py
+├── satellite-validation/
+│   ├── water_extraction.py      # GEE water-index thresholding
+│   └── iou_agreement.py
+├── risk-and-evacuation/
 │   ├── impact_engine.py
-│   └── route_engine.py
+│   ├── time_to_flood.py
+│   ├── road_bridge_safety.py    # time-aware safety status
+│   ├── route_engine.py          # networkx + osmnx
+│   └── priority_engine.py
+├── emergency-decision/
+│   ├── action_engine.py
+│   └── explainability.py
 ├── backend/
-│   ├── main.py                 # FastAPI app
-│   ├── routers/                # one router file per api_endpoints.md section
-│   ├── models/                 # DB models (dams, sensors, scenarios, users, alerts)
+│   ├── main.py                  # FastAPI app
+│   ├── routers/                 # one router file per api_endpoints.md section
+│   ├── models/                  # DB models (dams, scenarios, grids meta, impact, evacuation, priority, users)
+│   ├── celery_app.py
 │   └── auth/
-├── frontend/
-│   ├── mocks/                  # JSON fixtures matching api_endpoints.md shapes
-│   └── src/
-│       ├── components/         # MapView, DamCard, DamDetail tabs, TimeSlider, AlertsScreen
-│       └── three/
-└── README.md
+└── frontend/
+    ├── mocks/                   # JSON fixtures matching api_endpoints.md shapes
+    └── src/
+        ├── pages/                # 18 dashboard pages per frontend_spec.md
+        ├── components/           # MapView, ScenarioBuilder, TimeSlider, PriorityList, ExplainPanel
+        └── offline/              # service worker + IndexedDB cache logic
 ```
 
 ## 5. Setup Order
 
-1. Agree and freeze `docs/api_endpoints.md` v1 before either team writes feature code (Phase 0 in PRD).
-2. Backend: Python env, FastAPI, PostgreSQL with PostGIS + TimescaleDB extensions installed, JWT auth scaffold.
-3. Frontend: Node/React/TypeScript scaffold, Leaflet, Three.js, Recharts installed; `mocks/` folder populated first.
-4. Simulation: carry over the earlier flood-sim project's environment (HEC-RAS/ANUGA, `rasterio`, `geopandas`) unchanged.
-5. Dam Health AI: Python env with `torchvision`/`scikit-learn`/`xgboost`; sample sensor + imagery mock-data generator built early so this module isn't blocked on real data.
-6. GIS/Evacuation: `networkx`, `osmnx`, `shapely` installed; pull a sample Indian region's road network via `osmnx` for the demo dam(s).
-7. Wire ingestion → Dam Health AI → simulation trigger → GIS/evacuation → alerts → API, in that order, matching PRD Phases 2-5.
+1. Agree and freeze `docs/api_endpoints.md` v1 before any team writes feature code (Phase 0 in `PRD.md`).
+2. Backend: Python env, FastAPI, PostgreSQL with PostGIS installed, Redis + Celery worker scaffold, JWT auth scaffold.
+3. Data layer: GDAL/GeoPandas/Rasterio/Shapely installed; GEE Python API authenticated (service account or user OAuth) and one test Sentinel pull confirmed working — do this early, GEE auth setup is a common late-stage blocker.
+4. Frontend: Node/React (or Next.js) scaffold, Leaflet, Recharts installed; `mocks/` folder populated first against the frozen API contract.
+5. Hydrodynamic Engine: stand up the adapter interface and the surrogate implementations for SPH and Delft3D first (unblocks every downstream module); attempt real-model wrappers only once the surrogate path is fully wired end-to-end.
+6. Evacuation/routing: `networkx`, `osmnx` installed; pull the demo region's real road network via `osmnx` early, since large-area pulls can be slow.
+7. Wire data layer → missing-data diagnostic → scenario generator → hydrodynamic engine → flood digital twin → uncertainty/satellite-validation → risk/evacuation → emergency decision → API, in that order, matching `PRD.md` Phases 1–6.

@@ -1,6 +1,8 @@
 # Important Dam Locations — India (Reference)
 
-Reference list of major Indian dams with nearby villages/towns, coordinates, and SRTM download bounding boxes (±0.2° padding, ~20 km box — enough margin for dam + reservoir + downstream reach). Useful for grounding the sculpted terrain's dam/village naming/placement, or for downloading a real DEM via QGIS SRTM-Downloader if switching to the geo-referenced terrain path.
+Reference list of major Indian dams with nearby villages/towns, coordinates, and SRTM download bounding boxes (±0.2° padding, ~20 km box — enough margin for dam + reservoir + downstream reach). Flood-Guard AI's Data Layer (see `architecture.md` §2.1) uses a real, geo-referenced DEM (SRTM/ASTER) and real river/village/road layers for every registered dam — this table is the starting point for both the DEM download bounding boxes and the dam/river registry entries in `POST /dams` (`api_endpoints.md` §4.1).
+
+**Hero dam selection (A1 in `constraints.md`):** pick one dam from this list as the fully-worked end-to-end demo dam — prioritize a dam with (a) a well-documented historical high-water or flood event in this window, so Satellite Validation (Page 10) has a real event to check against, and (b) reasonably available village/road OpenStreetMap coverage downstream, so `osmnx`-based evacuation routing has real road data to work with. Tehri Dam, Hirakud Dam, and Idukki Dam are reasonable first candidates to check against both criteria before committing. The remaining 2–4 dams chosen for the demo can be registered with lighter/sample environment data purely to populate the Home/Command Center map.
 
 Coordinates marked *(approx)* are less-documented minor dams — confirm on Google Maps before finalizing your terrain area.
 
@@ -126,6 +128,6 @@ Coordinates marked *(approx)* are less-documented minor dams — confirm on Goog
 - Tehri Dam (Uttarakhand) is the tallest dam in India at 260.5 meters.
 - Hirakud Dam (Odisha) is the longest dam in Asia at 25.8 km.
 
-## Using coordinates with QGIS SRTM-Downloader
+## Using coordinates with QGIS SRTM-Downloader or the GEE Python API
 
-Paste the North/South/East/West values directly into the corresponding fields in the SRTM-Downloader dialog. Leave DEM-Type as SRTMGL3 (90m) unless finer resolution is needed (SRTMGL1 = 30m, requires a free NASA Earthdata API key). This is only relevant if you choose the real-world-DEM terrain path (A4 in constraints.md) — the project's recommended default is hand-sculpted terrain in Gaea.
+Paste the North/South/East/West values directly into the corresponding fields in the SRTM-Downloader dialog (QGIS), or use them as the bounding box passed to the Google Earth Engine Python API when pulling SRTM/ASTER elevation data and Sentinel/Landsat imagery for a dam's `data-layer/dem_ingest.py` and `data-layer/gee_client.py` jobs (see `tech_stack.md` §4). Leave DEM-Type as SRTMGL3 (90 m) unless finer resolution is needed (SRTMGL1 = 30 m, requires a free NASA Earthdata API key). Every dam registered in Flood-Guard AI uses this real, geo-referenced DEM path by default — there is no sculpted/non-geo terrain option in this project's architecture.
