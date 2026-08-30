@@ -212,7 +212,7 @@ The dashboard starts on the API-backed 3D dam registry. It loads all entries fro
 
 `.github/workflows/ci.yml` runs on pushes and pull requests to `main`. It installs Python dependencies, compiles and smoke-tests the API, installs the frontend with `npm ci`, and runs the production build.
 
-`.github/workflows/deploy.yml` supports provider deployment from `main`. Render and Vercel can also auto-deploy directly from their Git integrations. To enable the optional GitHub deploy jobs, create repository variable `VERCEL_DEPLOY_ENABLED=true` and secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`; create `RENDER_DEPLOY_ENABLED=true` and secret `RENDER_DEPLOY_HOOK` from the Render service's deploy hook. With the variables absent, the deploy workflow safely skips while CI continues to run.
+`.github/workflows/deploy.yml` supports provider deployment from `main`. Render and Vercel can also auto-deploy directly from their Git integrations. The GitHub deploy jobs are intentionally skipped until their repository variables are enabled: create `VERCEL_DEPLOY_ENABLED=true` and secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`; create `RENDER_DEPLOY_ENABLED=true` and secret `RENDER_DEPLOY_HOOK` from the Render service's deploy hook. With the variables absent, provider auto-deploys still work while CI continues to run. Do not enable a job until its corresponding token/hook secret is configured.
 
 ## Important Notes
 

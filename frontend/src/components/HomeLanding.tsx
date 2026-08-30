@@ -38,8 +38,12 @@ function project(dam: RegistryDam) {
 
 function FocusRig({ dam }: { dam: RegistryDam }) {
   const { camera } = useThree();
-  const target = useMemo(() => { const [x, y] = project(dam); return new THREE.Vector3(x * 0.36, 1.4, y * 0.36); }, [dam]);
-  useFrame(() => { const desired = new THREE.Vector3(target.x, target.y + 10, target.z + 14); camera.position.lerp(desired, 0.045); camera.lookAt(target); });
+  const focus = useMemo(() => { const [x, y] = project(dam); return new THREE.Vector3(x * 0.36, 1.4, y * 0.36); }, [dam]);
+  const desiredPosition = useMemo(() => new THREE.Vector3(focus.x + focus.x * 0.08, focus.y + 7.6, focus.z + 10.8), [focus]);
+  useFrame(() => {
+    camera.position.lerp(desiredPosition, 0.055);
+    camera.lookAt(focus);
+  });
   return null;
 }
 

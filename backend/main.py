@@ -94,6 +94,11 @@ if ASSET_ROOT.exists():
     app.mount("/assets", StaticFiles(directory=ASSET_ROOT), name="dam-assets")
 
 
+@app.get("/")
+def root():
+    return {"service": "flood-guard-api", "status": "ok", "health": "/health", "docs": "/docs"}
+
+
 def fail(status: int, code: str, message: str):
     raise HTTPException(status_code=status, detail={"error_code": code, "message": message})
 

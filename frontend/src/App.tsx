@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Header } from './components/Header';
 import { HomeLanding } from './components/HomeLanding';
 import { CommandCenter } from './components/CommandCenter';
@@ -24,6 +24,48 @@ import {
 
 export function App() {
   const [activeRoute, setActiveRoute] = useState<string>('home');
+  const [backendState, setBackendState] = useState<'idle' | 'waking' | 'ready' | 'unavailable'>('idle');
+  const [backendMessage, setBackendMessage] = useState('');
+  const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '');
+  const backendUrl = configuredApiUrl || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'http://127.0.0.1:8000' : '');
+  const backendReadyAt = useRef(0);
+
+  const warmBackend = async () => {
+    if (!backendUrl) {
+      setBackendState('unavailable');
+      setBackendMessage('Backend URL is not configured. Add VITE_API_URL in Vercel.');
+      return false;
+    }
+    if (Date.now() - backendReadyAt.current < 60_000) return true;
+
+    setBackendState('waking');
+    setBackendMessage('Waking the Render API. Free instances can take up to a minute to start.');
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 75_000);
+    try {
+      const response = await fetch(`${backendUrl}/health`, { cache: 'no-store', signal: controller.signal });
+      if (!response.ok) throw new Error('Health check failed');
+      backendReadyAt.current = Date.now();
+      setBackendState('ready');
+      setBackendMessage('Backend online.');
+      return true;
+    } catch {
+      setBackendState('unavailable');
+      setBackendMessage('The backend did not respond. You can continue in demo mode or retry.');
+      return false;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  };
+
+  useEffect(() => {
+    void warmBackend();
+  }, []);
+
+  const navigateWithWarmup = async (route: string) => {
+    const ready = await warmBackend();
+    if (ready || !backendUrl) setActiveRoute(route);
+  };
 
   // Modals
   const [explainVillage, setExplainVillage] = useState<VillageRisk | null>(null);
@@ -35,8 +77,11 @@ export function App() {
 
   // 5-Minute SIH Demo Flow Handler
   const handleTriggerDemoMode = () => {
-    setActiveRoute('command-center');
-    alert('SIH Live Demo Mode Activated!\n\n1. Command Center Loaded\n2. Konda Pochamma Sagar Dam Selected\n3. Severe Breach Scenario (100m width, 95% water level)\n4. Hydrodynamic Simulation Ready');
+    void warmBackend().then((ready) => {
+      if (!ready && backendUrl) return;
+      setActiveRoute('command-center');
+      alert('SIH Live Demo Mode Activated!\n\n1. Command Center Loaded\n2. Konda Pochamma Sagar Dam Selected\n3. Severe Breach Scenario (100m width, 95% water level)\n4. Hydrodynamic Simulation Ready');
+    });
   };
 
   return (
@@ -58,9 +103,9 @@ export function App() {
         {/* 0. HOME LANDING PAGE */}
         {activeRoute === 'home' && (
           <HomeLanding
-            onStartSimulation={() => setActiveRoute('command-center')}
+            onStartSimulation={() => void navigateWithWarmup('command-center')}
             onExploreDemo={handleTriggerDemoMode}
-            onViewArchitecture={() => setActiveRoute('data-quality')}
+            onViewArchitecture={() => void navigateWithWarmup('data-quality')}
           />
         )}
 
@@ -69,7 +114,7 @@ export function App() {
           <CommandCenter
             onOpenExplainability={(v) => setExplainVillage(v)}
             onOpenAssumptions={() => setShowAssumptionsModal(true)}
-            onNavigate={setActiveRoute}
+            onNavigate={(route) => void navigateWithWarmup(route)}
           />
         )}
 
@@ -103,7 +148,7 @@ export function App() {
                     <div className="flex justify-between"><span>Affected Villages:</span> <b className="text-white font-mono">{scen.villages}</b></div>
                   </div>
                   <button
-                    onClick={() => setActiveRoute('command-center')}
+                    onClick={() => void navigateWithWarmup('command-center')}
                     className="w-full mt-2 py-2 rounded-[12px] bg-white/10 hover:bg-white/20 text-white font-bold text-xs"
                   >
                     Simulate Scenario →
@@ -147,7 +192,7 @@ export function App() {
               </div>
 
               <button
-                onClick={() => setActiveRoute('command-center')}
+                onClick={() => void navigateWithWarmup('command-center')}
                 className="w-full py-3 rounded-[14px] bg-[var(--accent)] hover:bg-[var(--accent-hover)] text-white font-bold text-xs"
               >
                 View Output in Command Center →
@@ -291,7 +336,7 @@ export function App() {
               </div>
 
               <button
-                onClick={() => setActiveRoute('command-center')}
+                onClick={() => void navigateWithWarmup('command-center')}
                 className="w-full py-3 rounded-[14px] bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-lg shadow-purple-600/30 flex items-center justify-center space-x-1.5"
               >
                 <Sparkles className="w-4 h-4" />
@@ -420,6 +465,7 @@ export function App() {
           </div>
         )}
       </div>
+      {backendState === 'waking' && <div className="backend-warmup" role="status"><div className="backend-warmup-panel"><span className="backend-warmup-pulse" /><strong>CONNECTING TO FLOOD-GUARD API</strong><p>{backendMessage}</p><small>Render is starting the service before opening this workspace.</small></div></div>}
 
       {/* Modals & Audit Overlays */}
       {explainVillage && (
