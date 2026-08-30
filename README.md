@@ -194,9 +194,10 @@ The dashboard starts on the API-backed 3D dam registry. It loads all entries fro
 1. Create a Render Web Service connected to this repository.
 2. Set the root directory to `backend`.
 3. Use `render.yaml` as the service blueprint, or set:
-  - Build command: `pip install -r requirements.txt`
+  - Build command: `python -m pip install --upgrade pip && python -m pip install --only-binary=:all: -r requirements.txt`
   - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-4. Set `FRONTEND_ORIGIN` to the deployed Vercel URL, for example `https://flood-guard.vercel.app`.
+4. Confirm Render uses Python 3.12.10 from `backend/runtime.txt` (do not use Python 3.14 for this service).
+5. Set `FRONTEND_ORIGIN` to the deployed Vercel URL, for example `https://flood-guard.vercel.app`.
 
 **Frontend on Vercel**
 
