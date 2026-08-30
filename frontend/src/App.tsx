@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 
 export function App() {
-  const [activeRoute, setActiveRoute] = useState<string>('command-center');
+  const [activeRoute, setActiveRoute] = useState<string>('home');
 
   // Modals
   const [explainVillage, setExplainVillage] = useState<VillageRisk | null>(null);

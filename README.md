@@ -158,19 +158,60 @@ flood-guard-ai/
 
 ## Getting Started
 
-> Setup instructions will be filled in as each module comes online — see [`docs/tech_stack.md`](docs/tech_stack.md) section 5 for the full setup order.
+### Prerequisites
 
-```bash
-# Backend
-cd backend
-pip install -r requirements.txt --break-system-packages
-uvicorn main:app --reload
+- Python 3.12
+- Node.js 22 or newer
+- Git
 
-# Frontend
-cd frontend
-npm install
-npm run dev
+### Local development
+
+PowerShell terminal 1, from the repository root:
+
+```powershell
+Set-Location "C:\SDE Projects\SIH 2026"
+& ".\.venv\Scripts\python.exe" -m pip install -r backend\requirements.txt
+& ".\.venv\Scripts\python.exe" -m uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
+
+PowerShell terminal 2:
+
+```powershell
+Set-Location "C:\SDE Projects\SIH 2026\frontend"
+Copy-Item .env.example .env.local
+& "C:\Program Files\nodejs\npm.cmd" ci
+& "C:\Program Files\nodejs\npm.cmd" run dev -- --host 127.0.0.1 --port 5173
+```
+
+Open http://127.0.0.1:5173. The API health endpoint is http://127.0.0.1:8000/health and interactive API documentation is available at http://127.0.0.1:8000/docs.
+
+The dashboard starts on the API-backed 3D dam registry. It loads all entries from `important-dam-locations.md` through `GET /dams`, sorts them by the server-provided status and water-level inputs, and keeps all risk/simulation outputs labeled as `surrogate` in the prototype.
+
+### Deployment
+
+**Backend on Render**
+
+1. Create a Render Web Service connected to this repository.
+2. Set the root directory to `backend`.
+3. Use `render.yaml` as the service blueprint, or set:
+  - Build command: `pip install -r requirements.txt`
+  - Start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
+4. Set `FRONTEND_ORIGIN` to the deployed Vercel URL, for example `https://flood-guard.vercel.app`.
+
+**Frontend on Vercel**
+
+1. Import this repository into Vercel.
+2. Set the project root directory to `frontend`.
+3. Vercel detects the Vite build automatically. The build command is `npm run build` and the output directory is `dist`.
+4. Add `VITE_API_URL` with the public Render API URL, without a trailing slash, for example `https://flood-guard-api.onrender.com`.
+
+`frontend/vercel.json` handles SPA deep-link rewrites. Set both deployment environment variables before the first production deploy so browser requests do not point at localhost.
+
+### CI
+
+`.github/workflows/ci.yml` runs on pushes and pull requests to `main`. It installs Python dependencies, compiles and smoke-tests the API, installs the frontend with `npm ci`, and runs the production build.
+
+`.github/workflows/deploy.yml` supports provider deployment from `main`. Render and Vercel can also auto-deploy directly from their Git integrations. To enable the optional GitHub deploy jobs, create repository variable `VERCEL_DEPLOY_ENABLED=true` and secrets `VERCEL_TOKEN`, `VERCEL_ORG_ID`, and `VERCEL_PROJECT_ID`; create `RENDER_DEPLOY_ENABLED=true` and secret `RENDER_DEPLOY_HOOK` from the Render service's deploy hook. With the variables absent, the deploy workflow safely skips while CI continues to run.
 
 ## Important Notes
 

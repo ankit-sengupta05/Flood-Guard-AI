@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements.txt httpx==0.28.1
+      - run: python -m py_compile main.py
+      - run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, '.')
+          from fastapi.testclient import TestClient
+          from main import app
+          client = TestClient(app)
+          assert client.get('/health').status_code == 200
+          assert client.get('/dams').json()['total'] == 36
+          response = client.post('/dams/tehri-dam/scenarios', headers={'Authorization': 'Bearer demo-analyst'}, json={'water_level_pct': 68, 'breach_width_m': 80, 'failure_type': 'partial'})
+          assert response.status_code == 200
+          print('backend smoke test passed')
+          PY
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run build

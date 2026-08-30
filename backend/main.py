@@ -4,6 +4,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import re
 import secrets
 from datetime import datetime, timezone
@@ -13,6 +14,7 @@ from typing import Any, Literal, Optional
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +36,7 @@ def slug(value: str) -> str:
 def parse_dams() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     section = ""
+    seen_ids: set[str] = set()
     for line in DAM_SOURCE.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if line.startswith("## "):
@@ -48,6 +51,9 @@ def parse_dams() -> list[dict[str, Any]]:
             continue
         name = cells[0].replace("*", "").strip()
         dam_id = slug(name)
+        if dam_id in seen_ids:
+            dam_id = f"{dam_id}-{slug(section)}"
+        seen_ids.add(dam_id)
         rows.append({
             "dam_id": dam_id,
             "name": name,
@@ -80,7 +86,12 @@ USERS: dict[str, dict[str, Any]] = {
 }
 
 app = FastAPI(title="Flood-Guard AI API", version="1.0.0")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174", "http://localhost:3000"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+configured_origins = os.getenv("FRONTEND_ORIGIN", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:3000")
+local_origins = ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174", "http://localhost:3000"]
+configured_origins = [origin.strip() for origin in configured_origins.split(",") if origin.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=sorted(set(local_origins + configured_origins)), allow_origin_regex=r"https://[a-zA-Z0-9-]+\.vercel\.app", allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+if ASSET_ROOT.exists():
+    app.mount("/assets", StaticFiles(directory=ASSET_ROOT), name="dam-assets")
 
 
 def fail(status: int, code: str, message: str):
