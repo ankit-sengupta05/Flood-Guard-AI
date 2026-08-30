@@ -22,6 +22,15 @@ interface DemHeightmap {
   max: number;
 }
 
+const sampleTerrainHeight = (dem: DemHeightmap | null, x: number, y: number): number => {
+  if (!dem) return 0;
+  const nx = ((x + 25) / 50) * (dem.width - 1);
+  const ny = ((y + 25) / 50) * (dem.height - 1);
+  const col = Math.max(0, Math.min(dem.width - 1, Math.round(nx)));
+  const row = Math.max(0, Math.min(dem.height - 1, Math.round(ny)));
+  return dem.data[row * dem.width + col];
+};
+
 // Procedural 3D Terrain Mesh Component
 const TerrainMesh: React.FC<{ showSatelliteOverlay: boolean; dem: DemHeightmap | null; damPosition: number }> = ({ showSatelliteOverlay, dem, damPosition }) => {
   const terrainGeometry = useMemo(() => {
@@ -48,25 +57,38 @@ const TerrainMesh: React.FC<{ showSatelliteOverlay: boolean; dem: DemHeightmap |
     return geo;
   }, [damPosition, dem]);
 
+  const damX = -18 + damPosition * 28;
+  const damBaseZ = sampleTerrainHeight(dem, damX, 0);
+  const damWallHeight = dem ? Math.max(6, (dem.max - dem.min) * 0.12) : 7;
+  const terrainBottom = dem ? dem.min - 2 : -12;
+  const baseDepth = dem ? Math.max(16, (dem.max - dem.min) * 0.6) : 22;
+  const solidBaseY = terrainBottom - baseDepth - 6;
+
   return (
-    <group rotation={[-Math.PI / 2, 0, 0]}>
-      <mesh geometry={terrainGeometry} receiveShadow castShadow>
+    <group position={[0, 0, 0]}>
+      <mesh geometry={terrainGeometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow castShadow>
         <meshStandardMaterial
           color={showSatelliteOverlay ? '#1E293B' : '#2D3748'}
           roughness={0.85}
           metalness={0.1}
           wireframe={false}
+          side={THREE.DoubleSide}
         />
       </mesh>
 
+      <mesh position={[0, solidBaseY, 0]} castShadow receiveShadow>
+        <boxGeometry args={[100, 4, 100]} />
+        <meshStandardMaterial color="#111827" roughness={0.9} metalness={0.05} side={THREE.DoubleSide} />
+      </mesh>
+
       {showSatelliteOverlay && (
-        <mesh geometry={terrainGeometry} position={[0, 0, 0.05]}>
+        <mesh geometry={terrainGeometry} position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <meshBasicMaterial color="#A855F7" transparent opacity={0.35} wireframe />
         </mesh>
       )}
 
-      <mesh position={[-10, 0, 2.5]} rotation={[0, 0, 0]}>
-        <boxGeometry args={[2, 22, 9]} />
+      <mesh position={[damX, damBaseZ + damWallHeight / 2, 0]} rotation={[0, 0, 0]} castShadow receiveShadow>
+        <boxGeometry args={[3, damWallHeight, 18]} />
         <meshStandardMaterial color="#475569" roughness={0.4} />
       </mesh>
     </group>
@@ -74,13 +96,17 @@ const TerrainMesh: React.FC<{ showSatelliteOverlay: boolean; dem: DemHeightmap |
 };
 
 // Dynamic Water Surface Component
-const WaterSurface: React.FC<{ currentTimeStep: number; reservoirLevel: number }> = ({ currentTimeStep, reservoirLevel }) => {
+const WaterSurface: React.FC<{ currentTimeStep: number; reservoirLevel: number; dem: DemHeightmap | null; damPosition: number }> = ({ currentTimeStep, reservoirLevel, dem, damPosition }) => {
   const meshRef = useRef<THREE.Mesh>(null);
 
-  const floodLevel = useMemo(() => Math.max(0.5, (reservoirLevel - 20) * 0.18) + (currentTimeStep / 60) * 3.8, [currentTimeStep, reservoirLevel]);
+  const waterBase = dem ? sampleTerrainHeight(dem, -8 + damPosition * 20, 0) : 0;
+  const floodLevel = useMemo(() => {
+    const reservoirLift = Math.max(0.5, (reservoirLevel - 20) * 0.18);
+    return waterBase + reservoirLift + (currentTimeStep / 60) * 3.8;
+  }, [currentTimeStep, damPosition, dem, reservoirLevel, waterBase]);
 
   const waterLength = useMemo(() => {
-    return 15 + (currentTimeStep / 60) * 32;
+    return 18 + (currentTimeStep / 60) * 30;
   }, [currentTimeStep]);
 
   useFrame(({ clock }) => {
@@ -101,7 +127,7 @@ const WaterSurface: React.FC<{ currentTimeStep: number; reservoirLevel: number }
         <meshStandardMaterial color="#0284C7" roughness={0.1} metalness={0.8} transparent opacity={0.78} />
       </mesh>
 
-      <mesh position={[-25, 3.2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh position={[-25, waterBase + 1.2, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[20, 22]} />
         <meshStandardMaterial color="#0369A1" roughness={0.05} transparent opacity={0.85} />
       </mesh>
@@ -301,16 +327,16 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
 
       {/* 3D Canvas */}
       <Canvas
-        camera={{ position: [0, 18, 28], fov: 45 }}
+        camera={{ position: [0, 18, 30], fov: 45 }}
         shadows
         className="w-full h-full cursor-grab active:cursor-grabbing"
       >
-        <ambientLight intensity={0.6} />
-        <directionalLight position={[20, 40, 20]} intensity={1.2} castShadow />
-        <pointLight position={[-10, 10, 0]} intensity={2} color="#0284C7" />
+        <ambientLight intensity={0.8} />
+        <directionalLight position={[20, 40, 20]} intensity={1.35} castShadow />
+        <pointLight position={[-10, 10, 0]} intensity={2.5} color="#0284C7" />
 
         <TerrainMesh showSatelliteOverlay={showSatelliteOverlay} dem={dem} damPosition={damPosition} />
-        {showWater && <WaterSurface currentTimeStep={currentTimeStep} reservoirLevel={reservoirLevel} />}
+        {showWater && <WaterSurface currentTimeStep={currentTimeStep} reservoirLevel={reservoirLevel} dem={dem} damPosition={damPosition} />}
         {showWater && <SPHParticles currentTimeStep={currentTimeStep} />}
 
         {villages.map((v) => {
@@ -360,7 +386,13 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
         })}
 
         {cameraMode === 'cinematic' ? (
-          <OrbitControls maxPolarAngle={Math.PI / 2.1} minDistance={10} maxDistance={50} enableDamping />
+          <OrbitControls
+            target={[0, 4, 0]}
+            maxPolarAngle={Math.PI / 2.1}
+            minDistance={10}
+            maxDistance={60}
+            enableDamping
+          />
         ) : (
           <FlyControls movementSpeed={12} rollSpeed={0.5} dragToLook />
         )}
