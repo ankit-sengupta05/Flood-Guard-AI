@@ -67,7 +67,6 @@ export function App() {
         {activeRoute === 'home' && (
           <HomeLanding
             onStartSimulation={handleStartSimulation}
-            onExploreDemo={handleTriggerDemoMode}
             onViewArchitecture={() => setActiveRoute('data-quality')}
           />
         )}

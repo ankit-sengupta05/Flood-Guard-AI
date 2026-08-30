@@ -2,12 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   Play,
   Pause,
-  AlertTriangle,
   Sparkles,
   HelpCircle,
   Clock,
   Layers,
-  CheckCircle2,
   Navigation,
   Activity,
   Compass,
@@ -16,12 +14,10 @@ import {
   Locate,
 } from 'lucide-react';
 import { Scene3DViewport } from './Scene3DViewport';
-import type { Dam, VillageRisk, ModelMode } from '../types';
+import type { Dam, VillageRisk } from '../types';
 import {
   HERO_DAM,
-  SECONDARY_DAM,
   VILLAGES_DEMO_LIST,
-  DEFAULT_BREACH_PARAMS,
   ROAD_SEGMENTS_DEMO,
   SATELLITE_VALIDATION_STATS,
 } from '../data/demoData';
@@ -39,18 +35,12 @@ const API_URL = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '') || (['lo
 export const CommandCenter: React.FC<CommandCenterProps> = ({
   initialDam,
   onDamChange,
-  onOpenExplainability,
   onNavigate,
 }) => {
-  const [availableDams, setAvailableDams] = useState<Dam[]>([]);
+  const [, setAvailableDams] = useState<Dam[]>([]);
   // Dam & Scenario State
   const [selectedDam, setSelectedDam] = useState<Dam>(initialDam ?? HERO_DAM);
-  const [waterLevelPct, setWaterLevelPct] = useState(HERO_DAM.waterLevelPct);
-  const [breachWidthM, setBreachWidthM] = useState(DEFAULT_BREACH_PARAMS.widthM);
-  const [breachDepthM, setBreachDepthM] = useState(DEFAULT_BREACH_PARAMS.depthM);
-  const [formationTimeMin, setFormationTimeMin] = useState(DEFAULT_BREACH_PARAMS.formationTimeMin);
-  const [modelMode, setModelMode] = useState<ModelMode>('Hybrid');
-  const [scenarioPreset, setScenarioPreset] = useState<'Conservative' | 'Likely' | 'Severe' | 'Custom'>('Severe');
+  const [, setWaterLevelPct] = useState(HERO_DAM.waterLevelPct);
 
   // Timeline & Playback State
   const [currentTimeMin, setCurrentTimeMin] = useState<number>(20);
@@ -65,7 +55,6 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   // Selected Village
   const [selectedVillage, setSelectedVillage] = useState<VillageRisk>(VILLAGES_DEMO_LIST[0]);
   const [showSatelliteOverlay] = useState<boolean>(false);
-  const [isSimulating, setIsSimulating] = useState<boolean>(false);
 
   useEffect(() => {
     if (initialDam) {
@@ -82,7 +71,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         return response.json() as Promise<{ items: Array<Record<string, unknown>> }>;
       })
       .then((payload) => {
-        const registry = payload.items.map((record) => ({
+        const registry: Dam[] = payload.items.map((record) => ({
           id: String(record.dam_id ?? ''),
           name: String(record.name ?? ''),
           river: String(record.river ?? ''),
@@ -111,7 +100,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         }
       })
       .catch(() => {
-        setAvailableDams([HERO_DAM, SECONDARY_DAM]);
+        // Ignore registry fallback while the API reconnects; the selected dam remains authoritative.
       });
   }, [onDamChange, selectedDam.id]);
 
@@ -131,14 +120,6 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
     }
     return () => clearInterval(interval);
   }, [isPlaying, speedMultiplier]);
-
-  const handleRunSimulation = () => {
-    setIsSimulating(true);
-    setTimeout(() => {
-      setIsSimulating(false);
-      setCurrentTimeMin(20);
-    }, 1200);
-  };
 
   const timelineSteps = [0, 10, 20, 30, 45, 60, 90, 120];
 

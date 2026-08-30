@@ -25,28 +25,25 @@ interface DemHeightmap {
 // Procedural 3D Terrain Mesh Component
 const TerrainMesh: React.FC<{ showSatelliteOverlay: boolean; dem: DemHeightmap | null; damPosition: number }> = ({ showSatelliteOverlay, dem, damPosition }) => {
   const terrainGeometry = useMemo(() => {
-    const segmentsX = dem ? Math.max(1, dem.width - 1) : 80;
-    const segmentsY = dem ? Math.max(1, dem.height - 1) : 80;
-    const geo = new THREE.PlaneGeometry(50, 50, segmentsX, segmentsY);
+    const width = dem ? Math.max(1, dem.width - 1) : 1;
+    const height = dem ? Math.max(1, dem.height - 1) : 1;
+    const geo = new THREE.PlaneGeometry(50, 50, width, height);
     const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const y = pos.getY(i);
-      let z: number;
-      if (dem) {
+
+    if (dem) {
+      for (let i = 0; i < pos.count; i++) {
         const column = i % dem.width;
         const row = Math.floor(i / dem.width);
         const elevation = dem.data[row * dem.width + column];
-        z = ((elevation - dem.min) / Math.max(dem.max - dem.min, 1)) * 9 - 3;
-      } else {
-        const distFromRiver = Math.abs(y);
-        z = Math.sin(x * 0.15) * 1.5 + Math.pow(distFromRiver * 0.35, 1.8) - 2.5;
-        const damX = -25 + damPosition * 50;
-        if (Math.abs(x - damX) < 1.5 && Math.abs(y) < 12) z += 8 - Math.abs(y) * 0.4;
-        if (x < damX && distFromRiver < 10) z = Math.min(z, 3.5);
+        const z = ((elevation - dem.min) / Math.max(dem.max - dem.min, 1)) * 9 - 3;
+        pos.setZ(i, z);
       }
-      pos.setZ(i, z);
+    } else {
+      for (let i = 0; i < pos.count; i++) {
+        pos.setZ(i, 0);
+      }
     }
+
     geo.computeVertexNormals();
     return geo;
   }, [damPosition, dem]);
@@ -152,6 +149,7 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
   showSatelliteOverlay,
 }) => {
   const [cameraMode, setCameraMode] = useState<'cinematic' | 'drone'>('cinematic');
+  const [showWater, setShowWater] = useState<boolean>(true);
   const [dem, setDem] = useState<DemHeightmap | null>(null);
   const [demFile, setDemFile] = useState<File | null>(null);
   const [demWidth, setDemWidth] = useState('200');
@@ -292,9 +290,13 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
         </div>
         <label className="block text-[var(--ink-muted)]">Dam position: upstream to downstream<input type="range" min="5" max="95" value={damPosition * 100} onChange={(event) => setDamPosition(Number(event.target.value) / 100)} className="mt-1 w-full accent-[var(--accent)]" /><span className="mt-1 block text-right font-mono text-white">{Math.round(damPosition * 100)}%</span></label>
         <label className="block text-[var(--ink-muted)]">Reservoir level (m)<input type="number" value={reservoirLevel} onChange={(event) => setReservoirLevel(Number(event.target.value) || 0)} min="0" step="0.5" className="mt-1 w-full rounded border border-white/10 bg-[#0B0E12] px-2 py-1 text-white" /></label>
+        <label className="flex items-center justify-between gap-3 rounded border border-white/10 bg-[#0B0E12] px-2 py-1.5 text-[var(--ink-muted)]">
+          <span>Show water</span>
+          <input type="checkbox" checked={showWater} onChange={(event) => setShowWater(event.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
+        </label>
         <button onClick={() => void applyDem()} className="w-full rounded-lg bg-[var(--accent)] px-3 py-2 font-bold text-[#080b10] hover:brightness-110">APPLY &amp; RESET TERRAIN</button>
         <p className="min-h-7 text-[var(--ink-muted)] leading-relaxed">{demStatus}</p>
-        <p className="text-[9px] leading-relaxed text-[var(--ink-dim)]">SRTM usually cannot resolve the dam wall itself; use the position slider to align the synthetic ridge with the real valley.</p>
+        <p className="text-[9px] leading-relaxed text-[var(--ink-dim)]">The procedural fallback is disabled; the scene now relies on the selected dam terrain asset.</p>
       </div>
 
       {/* 3D Canvas */}
@@ -308,8 +310,8 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
         <pointLight position={[-10, 10, 0]} intensity={2} color="#0284C7" />
 
         <TerrainMesh showSatelliteOverlay={showSatelliteOverlay} dem={dem} damPosition={damPosition} />
-        <WaterSurface currentTimeStep={currentTimeStep} reservoirLevel={reservoirLevel} />
-        <SPHParticles currentTimeStep={currentTimeStep} />
+        {showWater && <WaterSurface currentTimeStep={currentTimeStep} reservoirLevel={reservoirLevel} />}
+        {showWater && <SPHParticles currentTimeStep={currentTimeStep} />}
 
         {villages.map((v) => {
           const isSelected = selectedVillage?.id === v.id;
