@@ -13,7 +13,9 @@ interface HomeProps {
 }
 
 type RegistryDam = Dam & { demRef?: string; terrainMeshRef?: string };
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8000';
+const configuredApiUrl = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '');
+const isLocalDevelopment = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+const API_URL = configuredApiUrl || (isLocalDevelopment ? 'http://127.0.0.1:8000' : '');
 const FALLBACK_DAMS: RegistryDam[] = [HERO_DAM, SECONDARY_DAM];
 
 function toDam(record: Record<string, unknown>): RegistryDam {
@@ -64,6 +66,10 @@ export const HomeLanding: React.FC<HomeProps> = ({ onStartSimulation, onExploreD
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!API_URL) {
+      setLoadError('API URL is not configured for this deployment. Set VITE_API_URL in Vercel and redeploy.');
+      return;
+    }
     fetch(`${API_URL}/dams?page=1&page_size=100`).then((response) => { if (!response.ok) throw new Error('Registry unavailable'); return response.json(); }).then((payload: { items: Record<string, unknown>[] }) => { const registry = payload.items.map(toDam); if (registry.length) { setDams(registry); setSelected(registry[0]); } }).catch(() => setLoadError('Showing cached registry while the API reconnects.'));
     const timer = window.setTimeout(() => setMapReady(true), 120);
     return () => window.clearTimeout(timer);
