@@ -20,6 +20,8 @@ import csv
 import gzip
 import json
 import math
+import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -268,6 +270,53 @@ def find_dem_files(output_dir: Path) -> List[Path]:
     return sorted(output_dir.rglob("*_dem.tif"))
 
 
+def render_existing_heightmaps(output_dir: Path) -> int:
+    rendered = 0
+    for dem_path in find_dem_files(output_dir):
+        image_path = dem_path.with_suffix(".png")
+        if image_path.exists() and image_path.stat().st_mtime >= dem_path.stat().st_mtime:
+            continue
+        render_grayscale_heightmap(dem_path, image_path)
+        print(f"  {dem_path.name} -> {image_path.name}")
+        rendered += 1
+    return rendered
+
+
+def download_file_resumable(url: str, target: Path, retries: int = 5, chunk_size: int = 1024 * 1024) -> Path:
+    """Download a file with HTTP Range resume and an atomic final rename."""
+    partial = target.with_name(f"{target.name}.part")
+    target.parent.mkdir(parents=True, exist_ok=True)
+
+    for attempt in range(1, retries + 1):
+        downloaded = partial.stat().st_size if partial.exists() else 0
+        request = urllib.request.Request(url)
+        if downloaded:
+            request.add_header("Range", f"bytes={downloaded}-")
+
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                resumed = downloaded > 0 and response.status == 206
+                if downloaded and not resumed:
+                    partial.unlink()
+                    downloaded = 0
+                mode = "ab" if resumed else "wb"
+                with partial.open(mode) as destination:
+                    while True:
+                        chunk = response.read(chunk_size)
+                        if not chunk:
+                            break
+                        destination.write(chunk)
+            partial.replace(target)
+            return target
+        except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+            print(f"      download interrupted ({attempt}/{retries}): {exc}")
+            if attempt == retries:
+                raise RuntimeError(f"Could not finish download: {url}. Resume file kept at {partial}") from exc
+            time.sleep(min(2 ** (attempt - 1), 30))
+
+    raise RuntimeError(f"Could not finish download: {url}")
+
+
 def download_dem_for_dam(dam: DamLocation, radius_km: float, output_dir: Path, product: str = "SRTM1"):
     """Download public SRTM tiles and write a DEM clipped to the requested radius."""
     if product != "SRTM1":
@@ -301,12 +350,15 @@ def download_dem_for_dam(dam: DamLocation, radius_km: float, output_dir: Path, p
                 url = f"https://s3.amazonaws.com/elevation-tiles-prod/skadi/{latitude_name}/{tile_name}.hgt.gz"
                 compressed_path = tile_path.with_suffix(".hgt.gz")
                 print(f"    downloading {tile_name}.hgt.gz")
+                download_file_resumable(url, compressed_path)
                 try:
-                    urllib.request.urlretrieve(url, compressed_path)
                     with gzip.open(compressed_path, "rb") as source, tile_path.open("wb") as destination:
                         destination.write(source.read())
-                finally:
+                except (OSError, EOFError) as exc:
+                    tile_path.unlink(missing_ok=True)
                     compressed_path.unlink(missing_ok=True)
+                    raise RuntimeError(f"Downloaded tile {tile_name} is corrupt: {exc}") from exc
+                compressed_path.unlink(missing_ok=True)
             tile_paths.append(tile_path)
 
     sources = [rasterio.open(path) for path in tile_paths]
@@ -351,7 +403,8 @@ def main():
     parser.add_argument("--product", choices=["SRTM1", "SRTM3", "ASTER", "ALOS"], default="SRTM1", help="DEM product to download when --download is used")
     parser.add_argument("--max-dams", type=int, default=None, help="Optional limit for number of dams to process")
     parser.add_argument("--dry-run", action="store_true", help="Generate metadata only without downloading DEMs")
-    parser.add_argument("--render-grayscale", action="store_true", help="Render grayscale PNG heightmaps from any DEM TIFFs already present in the output folder")
+    parser.add_argument("--render-grayscale", action="store_true", help="Render grayscale PNG heightmaps after each DEM download")
+    parser.add_argument("--render-existing", action="store_true", help="Render PNGs for completed DEM TIFFs without downloading")
     args = parser.parse_args()
 
     dams = parse_dam_locations(args.source)
@@ -389,15 +442,13 @@ def main():
             except Exception as exc:  # pragma: no cover
                 print(f"  {dam.name}: download failed - {exc}")
 
-    if args.render_grayscale and not args.download:
-        print("Rendering grayscale heightmaps from existing DEMs...")
-        for dem_path in find_dem_files(output_dir):
-            try:
-                image_path = dem_path.with_suffix(".png")
-                render_grayscale_heightmap(dem_path, image_path)
-                print(f"  {dem_path.name} -> {image_path.name}")
-            except Exception as exc:  # pragma: no cover
-                print(f"  {dem_path.name}: render failed - {exc}")
+    if args.render_existing or (args.render_grayscale and not args.download):
+        print("Rendering grayscale heightmaps from completed DEMs...")
+        try:
+            rendered = render_existing_heightmaps(output_dir)
+            print(f"Rendered {rendered} grayscale image(s).")
+        except Exception as exc:  # pragma: no cover
+            print(f"Existing DEM render failed: {exc}")
 
     if args.dry_run:
         print("Dry run: metadata exported without DEM downloads.")
