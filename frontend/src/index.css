@@ -196,7 +196,7 @@ body {
 .mode-pill { padding: 5px 7px; border: 1px solid rgba(255,106,61,.4); border-radius: 999px; color: var(--accent); font-size: 7px; letter-spacing: .08em; }
 .detail-disclosure { color: var(--ink-muted); font-size: 10px; line-height: 1.6; }
 .detail-action { width: 100%; margin-top: 26px; }
-@media (max-width: 900px) { .home-command { display: block; overflow: auto; } .home-map-wrap { min-height: 690px; } .dam-registry { min-height: 680px; border-left: 0; border-top: 1px solid var(--line); } .home-map-copy { left: 26px; top: 18%; width: 400px; max-width: calc(100% - 52px); } }
+@media (max-width: 700px) { .home-command { display: block; overflow: auto; } .home-map-wrap { min-height: 690px; } .dam-registry { min-height: 680px; border-left: 0; border-top: 1px solid var(--line); } .home-map-copy { left: 26px; top: 18%; width: 400px; max-width: calc(100% - 52px); } }
 @media (max-width: 560px) { .home-map-wrap { min-height: 610px; } .home-map-copy h1 { font-size: 43px; } .home-map-legend { left: 20px; gap: 9px; flex-wrap: wrap; max-width: 250px; } .home-brand { left: 20px; } .dam-registry { padding: 25px 15px 16px; } }
 .backend-warmup { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(7,9,14,.72); backdrop-filter: blur(8px); }
 .backend-warmup-panel { width: min(430px, 100%); padding: 25px; border: 1px solid rgba(255,106,61,.45); border-radius: var(--radius-panel); background: rgba(21,26,33,.97); box-shadow: 0 24px 80px rgba(0,0,0,.45); }
