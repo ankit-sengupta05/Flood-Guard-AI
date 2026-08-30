@@ -15,7 +15,7 @@ import {
   SENSITIVITY_DATA,
   SATELLITE_VALIDATION_STATS,
 } from './data/demoData';
-import type { VillageRisk } from './types';
+import type { Dam, VillageRisk } from './types';
 import {
   Sparkles,
   Smartphone,
@@ -24,6 +24,7 @@ import {
 
 export function App() {
   const [activeRoute, setActiveRoute] = useState<string>('home');
+  const [currentDam, setCurrentDam] = useState<Dam | null>(null);
 
   // Modals
   const [explainVillage, setExplainVillage] = useState<VillageRisk | null>(null);
@@ -35,16 +36,23 @@ export function App() {
 
   // 5-Minute SIH Demo Flow Handler
   const handleTriggerDemoMode = () => {
+    setCurrentDam(HERO_DAM);
     setActiveRoute('command-center');
     alert('SIH Live Demo Mode Activated!\n\n1. Command Center Loaded\n2. Konda Pochamma Sagar Dam Selected\n3. Severe Breach Scenario (100m width, 95% water level)\n4. Hydrodynamic Simulation Ready');
+  };
+
+  const handleStartSimulation = (dam?: Dam | null) => {
+    const nextDam = dam ?? currentDam ?? HERO_DAM;
+    setCurrentDam(nextDam);
+    setActiveRoute('command-center');
   };
 
   return (
     <div className="min-h-screen bg-[#07090E] text-[#F4F6F8] flex flex-col font-sans select-none">
       {/* Global Top Header Bar (renders on all views except home landing) */}
-      {activeRoute !== 'home' && (
+      {activeRoute !== 'home' && currentDam && (
         <Header
-          currentDam={HERO_DAM}
+          currentDam={currentDam}
           selectedScenarioName="Severe_Breach_03 (100m Width)"
           modelMode="Hybrid"
           activeRoute={activeRoute}
@@ -58,7 +66,7 @@ export function App() {
         {/* 0. HOME LANDING PAGE */}
         {activeRoute === 'home' && (
           <HomeLanding
-            onStartSimulation={() => setActiveRoute('command-center')}
+            onStartSimulation={handleStartSimulation}
             onExploreDemo={handleTriggerDemoMode}
             onViewArchitecture={() => setActiveRoute('data-quality')}
           />
@@ -67,6 +75,8 @@ export function App() {
         {/* 1. COMMAND CENTER (The Visual Centerpiece) */}
         {activeRoute === 'command-center' && (
           <CommandCenter
+            initialDam={currentDam ?? HERO_DAM}
+            onDamChange={setCurrentDam}
             onOpenExplainability={(v) => setExplainVillage(v)}
             onOpenAssumptions={() => setShowAssumptionsModal(true)}
             onNavigate={setActiveRoute}

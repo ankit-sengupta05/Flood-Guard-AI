@@ -185,6 +185,16 @@ Copy-Item .env.example .env.local
 
 Open http://127.0.0.1:5173. The API health endpoint is http://127.0.0.1:8000/health and interactive API documentation is available at http://127.0.0.1:8000/docs.
 
+### Browser terrain assets
+
+Convert every downloaded dam DEM into browser-ready terrain assets in one command:
+
+```powershell
+& ".\.venv\Scripts\python.exe" scripts\convert_all_heightmaps.py --target 200
+```
+
+This writes each dam's float32 heightmap and metadata to `frontend/public/terrain/`. The simulation workspace loads the matching asset automatically when a dam is selected and uses procedural terrain only when that dam has no converted asset yet.
+
 The dashboard starts on the API-backed 3D dam registry. It loads all entries from `important-dam-locations.md` through `GET /dams`, sorts them by the server-provided status and water-level inputs, and keeps all risk/simulation outputs labeled as `surrogate` in the prototype.
 
 ### Deployment

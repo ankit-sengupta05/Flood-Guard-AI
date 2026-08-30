@@ -317,20 +317,25 @@ def download_file_resumable(url: str, target: Path, retries: int = 5, chunk_size
     raise RuntimeError(f"Could not finish download: {url}")
 
 
-def download_dem_for_dam(dam: DamLocation, radius_km: float, output_dir: Path, product: str = "SRTM1"):
+def download_dem_for_dam(dam: DamLocation, radius_km: float, output_dir: Path, product: str = "SRTM1", bounds: Optional[tuple[float, float, float, float]] = None):
     """Download public SRTM tiles and write a DEM clipped to the requested radius."""
     if product != "SRTM1":
         raise ValueError("The native downloader currently supports SRTM1 only; use --product SRTM1.")
 
-    # Always derive the download extent from the requested radius. The markdown
-    # table contains legacy +/-0.2 degree reference boxes, not the DEM extent.
-    latitude_delta = radius_km / 111.32
-    longitude_delta = latitude_delta / max(math.cos(math.radians(dam.lat)), 1e-6)
-    west = dam.lon - longitude_delta
-    south = dam.lat - latitude_delta
-    east = dam.lon + longitude_delta
-    north = dam.lat + latitude_delta
-    bounds = (west, south, east, north)
+    if bounds is None:
+        # Derive the download extent from the requested radius. Catalog boxes
+        # are metadata and are not used unless explicit bounds are supplied.
+        latitude_delta = radius_km / 111.32
+        longitude_delta = latitude_delta / max(math.cos(math.radians(dam.lat)), 1e-6)
+        west = dam.lon - longitude_delta
+        south = dam.lat - latitude_delta
+        east = dam.lon + longitude_delta
+        north = dam.lat + latitude_delta
+        bounds = (west, south, east, north)
+    else:
+        west, south, east, north = bounds
+        if not west < east or not south < north:
+            raise ValueError("Custom bounds must be ordered west < east and south < north.")
     target = output_dir / f"{dam.slug}_dem.tif"
     tile_cache = output_dir / "srtm_tiles"
     tile_cache.mkdir(parents=True, exist_ok=True)
@@ -402,12 +407,28 @@ def main():
     parser.add_argument("--download", action="store_true", help="Download DEM GeoTIFFs for each dam using the elevation package")
     parser.add_argument("--product", choices=["SRTM1", "SRTM3", "ASTER", "ALOS"], default="SRTM1", help="DEM product to download when --download is used")
     parser.add_argument("--max-dams", type=int, default=None, help="Optional limit for number of dams to process")
+    parser.add_argument("--dam-name", type=str, default=None, help="Process only the dam with this name")
+    parser.add_argument("--north", type=float, default=None, help="Custom DEM north bound")
+    parser.add_argument("--south", type=float, default=None, help="Custom DEM south bound")
+    parser.add_argument("--east", type=float, default=None, help="Custom DEM east bound")
+    parser.add_argument("--west", type=float, default=None, help="Custom DEM west bound")
     parser.add_argument("--dry-run", action="store_true", help="Generate metadata only without downloading DEMs")
     parser.add_argument("--render-grayscale", action="store_true", help="Render grayscale PNG heightmaps after each DEM download")
     parser.add_argument("--render-existing", action="store_true", help="Render PNGs for completed DEM TIFFs without downloading")
     args = parser.parse_args()
 
     dams = parse_dam_locations(args.source)
+    if args.dam_name:
+        dams = [dam for dam in dams if dam.name.casefold() == args.dam_name.casefold()]
+        if not dams:
+            raise ValueError(f"Dam not found: {args.dam_name}")
+    custom_bounds = (args.west, args.south, args.east, args.north)
+    if any(value is not None for value in custom_bounds) and not all(value is not None for value in custom_bounds):
+        raise ValueError("Custom DEM bounds require --north, --south, --east, and --west together.")
+    if all(value is not None for value in custom_bounds):
+        args_north, args_south, args_east, args_west = custom_bounds[3], custom_bounds[1], custom_bounds[2], custom_bounds[0]
+        for dam in dams:
+            dam.north, dam.south, dam.east, dam.west = args_north, args_south, args_east, args_west
     if args.max_dams is not None:
         dams = dams[: args.max_dams]
 
@@ -431,7 +452,7 @@ def main():
         print("Downloading DEMs...")
         for dam in dams:
             try:
-                dem_path = download_dem_for_dam(dam, args.radius_km, output_dir / dam.slug, product=args.product)
+                dem_path = download_dem_for_dam(dam, args.radius_km, output_dir / dam.slug, product=args.product, bounds=custom_bounds if all(value is not None for value in custom_bounds) else None)
                 print(f"  {dam.name}: {dem_path}")
                 if args.render_grayscale:
                     image_path = dem_path.with_suffix(".png")

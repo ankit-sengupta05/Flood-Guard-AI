@@ -27,17 +27,24 @@ import {
 } from '../data/demoData';
 
 interface CommandCenterProps {
+  initialDam?: Dam;
+  onDamChange?: (dam: Dam) => void;
   onOpenExplainability: (village: VillageRisk) => void;
   onOpenAssumptions: () => void;
   onNavigate: (route: string) => void;
 }
 
+const API_URL = import.meta.env.VITE_API_URL?.trim().replace(/\/$/, '') || (['localhost', '127.0.0.1'].includes(window.location.hostname) ? 'http://127.0.0.1:8000' : '');
+
 export const CommandCenter: React.FC<CommandCenterProps> = ({
+  initialDam,
+  onDamChange,
   onOpenExplainability,
   onNavigate,
 }) => {
+  const [availableDams, setAvailableDams] = useState<Dam[]>([]);
   // Dam & Scenario State
-  const [selectedDam, setSelectedDam] = useState<Dam>(HERO_DAM);
+  const [selectedDam, setSelectedDam] = useState<Dam>(initialDam ?? HERO_DAM);
   const [waterLevelPct, setWaterLevelPct] = useState(HERO_DAM.waterLevelPct);
   const [breachWidthM, setBreachWidthM] = useState(DEFAULT_BREACH_PARAMS.widthM);
   const [breachDepthM, setBreachDepthM] = useState(DEFAULT_BREACH_PARAMS.depthM);
@@ -59,6 +66,58 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   const [selectedVillage, setSelectedVillage] = useState<VillageRisk>(VILLAGES_DEMO_LIST[0]);
   const [showSatelliteOverlay] = useState<boolean>(false);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (initialDam) {
+      setSelectedDam(initialDam);
+      setWaterLevelPct(initialDam.waterLevelPct);
+    }
+  }, [initialDam]);
+
+  useEffect(() => {
+    if (!API_URL) return;
+    fetch(`${API_URL}/dams?page=1&page_size=100`)
+      .then((response) => {
+        if (!response.ok) throw new Error('Dam registry unavailable');
+        return response.json() as Promise<{ items: Array<Record<string, unknown>> }>;
+      })
+      .then((payload) => {
+        const registry = payload.items.map((record) => ({
+          id: String(record.dam_id ?? ''),
+          name: String(record.name ?? ''),
+          river: String(record.river ?? ''),
+          state: String(record.state ?? ''),
+          district: String(record.district ?? ''),
+          lat: Number(record.lat ?? 0),
+          lng: Number(record.lng ?? 0),
+          heightM: Number(record.height_m ?? 0),
+          capacityMcm: Number(record.reservoir_capacity_mcm ?? 0),
+          currentStorageMcm: Number(record.current_storage_mcm ?? 0),
+          waterLevelPct: Number(record.water_level_pct ?? 0),
+          inflowM3s: Number(record.inflow_m3s ?? 0),
+          outflowM3s: Number(record.outflow_m3s ?? 0),
+          status: String(record.status ?? 'no_active_scenario'),
+          modelMode: 'surrogate',
+        }));
+        if (registry.length > 0) {
+          setAvailableDams(registry);
+          const currentExists = registry.some((dam) => dam.id === selectedDam.id);
+          if (!currentExists) {
+            const nextDam = registry[0];
+            setSelectedDam(nextDam);
+            setWaterLevelPct(nextDam.waterLevelPct);
+            onDamChange?.(nextDam);
+          }
+        }
+      })
+      .catch(() => {
+        setAvailableDams([HERO_DAM, SECONDARY_DAM]);
+      });
+  }, [onDamChange, selectedDam.id]);
+
+  useEffect(() => {
+    onDamChange?.(selectedDam);
+  }, [onDamChange, selectedDam]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -84,198 +143,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   const timelineSteps = [0, 10, 20, 30, 45, 60, 90, 120];
 
   return (
-    <div className="flex flex-col h-[calc(100vh-80px)] w-full bg-[#07090E] text-[#F4F6F8] overflow-y-auto select-none">
-      {/* Upper Main 3-Column Layout: Left Controls + Hero Map + Right Insights */}
+    <div className="flex flex-col h-[calc(100vh-80px)] w-full bg-[#07090E] text-[#F4F6F8] overflow-hidden select-none">
       <div className="flex flex-1 min-h-[580px] overflow-hidden relative border-b border-white/10">
-        {/* LEFT PANEL: DAM & SCENARIO CONTROLS (18% Width) */}
-        <aside className="w-72 bg-[#0B0E12] border-r border-white/10 flex flex-col z-30 text-xs overflow-y-auto shrink-0">
-          <div className="p-3 border-b border-white/10 bg-white/5 flex items-center justify-between">
-            <span className="font-bold tracking-wide uppercase text-white text-[11px]">DAM & SCENARIO CONTROLS</span>
-          </div>
-
-          <div className="p-3 space-y-3.5">
-            {/* Select Dam / Reservoir */}
-            <div>
-              <label className="text-[10px] font-semibold text-[var(--ink-muted)] uppercase block mb-1">
-                Select Dam / Reservoir
-              </label>
-              <select
-                value={selectedDam.id}
-                onChange={(e) => {
-                  const dam = e.target.value === 'konda-pochamma' ? HERO_DAM : SECONDARY_DAM;
-                  setSelectedDam(dam);
-                  setWaterLevelPct(dam.waterLevelPct);
-                }}
-                className="w-full bg-[#151A21] border border-white/10 rounded-[10px] p-2 text-xs font-semibold text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="konda-pochamma">Konda Pochamma Sagar Dam</option>
-                <option value="tehri-dam">Tehri Dam (Bhagirathi River)</option>
-              </select>
-            </div>
-
-            {/* Reservoir Conditions */}
-            <div className="bg-[#151A21] p-2.5 rounded-[12px] border border-white/5 space-y-1.5">
-              <div className="text-[10px] font-bold text-[var(--ink-muted)] uppercase">Reservoir Conditions</div>
-              <div className="flex justify-between items-center text-[11px]">
-                <span className="text-[var(--ink-muted)]">Water Level:</span>
-                <span className="font-mono font-bold text-blue-400">{waterLevelPct}%</span>
-              </div>
-              <input
-                type="range"
-                min="50"
-                max="100"
-                value={waterLevelPct}
-                onChange={(e) => setWaterLevelPct(Number(e.target.value))}
-                className="w-full h-1 bg-white/10 rounded appearance-none cursor-pointer accent-blue-500"
-              />
-              <div className="flex justify-between text-[10px] text-[var(--ink-muted)] font-mono">
-                <span>Storage Volume:</span>
-                <span className="text-white font-bold">{selectedDam.currentStorageMcm} MCM / {selectedDam.capacityMcm} MCM</span>
-              </div>
-              <div className="flex justify-between text-[10px] text-[var(--ink-muted)] font-mono">
-                <span>Inflow (24h):</span>
-                <span className="text-white font-bold">{selectedDam.inflowM3s} m³/s</span>
-              </div>
-              <div className="flex justify-between text-[10px] text-[var(--ink-muted)] font-mono">
-                <span>Outflow (24h):</span>
-                <span className="text-white font-bold">{selectedDam.outflowM3s} m³/s</span>
-              </div>
-            </div>
-
-            {/* Breach Parameters */}
-            <div className="space-y-2">
-              <span className="text-[10px] font-bold text-[var(--ink-muted)] uppercase block">
-                Breach Parameters
-              </span>
-
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-[var(--ink-muted)]">Breach Width</span>
-                <div className="flex items-center space-x-1">
-                  <input
-                    type="number"
-                    value={breachWidthM}
-                    onChange={(e) => setBreachWidthM(Number(e.target.value))}
-                    className="w-14 bg-[#151A21] border border-white/10 rounded px-1.5 py-0.5 text-right text-white font-mono text-[10px]"
-                  />
-                  <span className="text-[var(--ink-muted)]">m</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-[var(--ink-muted)]">Breach Depth</span>
-                <div className="flex items-center space-x-1">
-                  <input
-                    type="number"
-                    value={breachDepthM}
-                    onChange={(e) => setBreachDepthM(Number(e.target.value))}
-                    className="w-14 bg-[#151A21] border border-white/10 rounded px-1.5 py-0.5 text-right text-white font-mono text-[10px]"
-                  />
-                  <span className="text-[var(--ink-muted)]">m</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-[var(--ink-muted)]">Breach Formation Time</span>
-                <div className="flex items-center space-x-1">
-                  <input
-                    type="number"
-                    value={formationTimeMin}
-                    onChange={(e) => setFormationTimeMin(Number(e.target.value))}
-                    className="w-14 bg-[#151A21] border border-white/10 rounded px-1.5 py-0.5 text-right text-white font-mono text-[10px]"
-                  />
-                  <span className="text-[var(--ink-muted)]">min</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center text-[10px]">
-                <span className="text-[var(--ink-muted)]">Breach Type</span>
-                <select className="bg-[#151A21] border border-white/10 rounded px-1 py-0.5 text-white font-semibold text-[10px]">
-                  <option>Instantaneous</option>
-                  <option>Progressive</option>
-                  <option>Overtopping</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Scenario Selector */}
-            <div>
-              <span className="text-[10px] font-bold text-[var(--ink-muted)] uppercase block mb-1">
-                Scenario Selector
-              </span>
-              <div className="grid grid-cols-3 gap-1 text-[10px]">
-                {(['Conservative', 'Likely', 'Severe'] as const).map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => {
-                      setScenarioPreset(p);
-                      if (p === 'Conservative') { setBreachWidthM(50); setWaterLevelPct(75); }
-                      if (p === 'Likely') { setBreachWidthM(100); setWaterLevelPct(88); }
-                      if (p === 'Severe') { setBreachWidthM(150); setWaterLevelPct(95); }
-                    }}
-                    className={`py-1 rounded border text-center transition-all ${
-                      scenarioPreset === p
-                        ? 'bg-blue-600 border-blue-500 text-white font-bold shadow'
-                        : 'border-white/10 bg-white/5 text-[var(--ink-muted)] hover:text-white'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-              <button className="w-full mt-1 py-1 rounded border border-white/10 bg-white/5 text-[var(--ink-muted)] text-[10px] hover:text-white">
-                Custom Scenario
-              </button>
-            </div>
-
-            {/* Large Blue Action Button */}
-            <button
-              onClick={handleRunSimulation}
-              disabled={isSimulating}
-              className="w-full py-2.5 rounded-[12px] bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center space-x-2"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>{isSimulating ? 'SIMULATING DAM FAILURE...' : 'RUN SIMULATION'}</span>
-            </button>
-
-            {/* Model Mode & Status */}
-            <div className="bg-[#151A21] p-2 rounded-[12px] border border-white/5 text-[10px] space-y-1">
-              <div className="flex justify-between items-center">
-                <span className="text-[var(--ink-muted)]">Model Mode</span>
-                <select
-                  value={modelMode}
-                  onChange={(e) => setModelMode(e.target.value as any)}
-                  className="bg-[#0B0E12] border border-white/10 rounded px-1.5 py-0.5 text-blue-400 font-bold"
-                >
-                  <option value="Hybrid">Hybrid (SPH + Delft3D)</option>
-                  <option value="SPH">SPH Particles</option>
-                  <option value="Delft3D">Delft3D Grid</option>
-                </select>
-              </div>
-
-              <div className="flex justify-between items-center font-mono">
-                <span className="text-[var(--ink-muted)]">Simulation Status:</span>
-                <span className="text-emerald-400 font-bold flex items-center space-x-1">
-                  <CheckCircle2 className="w-3 h-3" />
-                  <span>Completed</span>
-                </span>
-              </div>
-              <div className="flex justify-between font-mono text-[9px] text-[var(--ink-muted)]">
-                <span>Time Taken:</span>
-                <span>00:18:42</span>
-              </div>
-
-              <button
-                onClick={() => onNavigate('scenarios')}
-                className="w-full mt-1 py-1 rounded bg-white/5 hover:bg-white/10 text-[var(--ink-muted)] hover:text-white text-[9px] font-medium border border-white/10"
-              >
-                VIEW SCENARIO COMPARISON
-              </button>
-            </div>
-          </div>
-        </aside>
-
-        {/* CENTER MAIN MAP: SATELLITE CANVAS VIEWPORT (55% Width) */}
-        <main className="flex-1 relative h-full bg-[#07090E] shrink-0">
+        <main className="flex-1 relative h-full w-full bg-[#07090E] shrink-0 overflow-hidden">
           {/* Top Layer Selector Toolbar Floating Over Map */}
           <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center space-x-1 bg-[#0B0E12]/90 backdrop-blur-md px-2 py-1 rounded-[14px] border border-white/15 text-[11px] shadow-2xl">
             {[
@@ -359,100 +229,6 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             17.3891° N, 78.6578° E
           </div>
         </main>
-
-        {/* RIGHT PANEL: EMERGENCY INSIGHTS (22% Width) */}
-        <aside className="w-80 bg-[#0B0E12] border-l border-white/10 flex flex-col z-30 text-xs overflow-y-auto shrink-0">
-          {/* CRITICAL ALERT CARD */}
-          <div className="p-3 bg-red-950/30 border-b border-red-500/20 space-y-2">
-            <div className="flex items-center space-x-2 text-red-500 font-bold uppercase tracking-wider text-[11px]">
-              <AlertTriangle className="w-4 h-4 text-red-500 animate-pulse" />
-              <span>CRITICAL ALERT</span>
-            </div>
-
-            <div className="bg-[#151A21] p-3 rounded-[14px] border border-red-500/30 space-y-2">
-              <h3 className="font-bold text-sm text-white">Village {selectedVillage.name}</h3>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px]">
-                <div className="bg-black/30 p-2 rounded-[10px]">
-                  <span className="text-[var(--ink-muted)] text-[9px] block">Flood arrival in</span>
-                  <span className="font-mono font-extrabold text-red-500 text-lg">{selectedVillage.earliestArrivalMin}</span>
-                  <span className="text-[10px] text-red-400 font-bold ml-1">min</span>
-                </div>
-                <div className="bg-black/30 p-2 rounded-[10px]">
-                  <span className="text-[var(--ink-muted)] text-[9px] block">Expected Depth</span>
-                  <span className="font-mono font-extrabold text-white text-lg">{selectedVillage.expectedDepthM}</span>
-                  <span className="text-[10px] text-[var(--ink-muted)] font-bold ml-1">m</span>
-                </div>
-              </div>
-
-              <div className="flex justify-between items-center text-[10px] pt-1">
-                <div>
-                  <span className="text-[var(--ink-muted)]">Flood Probability</span>
-                  <div className="font-mono font-bold text-white text-xs">{selectedVillage.floodProbabilityPct}%</div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[var(--ink-muted)] block">Confidence</span>
-                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-bold text-[9px] border border-emerald-500/30">
-                    {selectedVillage.confidence}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="p-3 space-y-3">
-            {/* RECOMMENDED ACTION CARD */}
-            <div className="bg-[#151A21] p-3 rounded-[14px] border border-white/5 space-y-2">
-              <div className="flex items-center space-x-1 text-[10px] font-bold text-amber-400 uppercase tracking-wider">
-                <Navigation className="w-3.5 h-3.5" />
-                <span>RECOMMENDED ACTION</span>
-              </div>
-
-              <div className="font-extrabold text-amber-400 text-xs">
-                {selectedVillage.recommendedAction}
-                <span className="text-white block text-[11px] font-normal">via <b className="text-amber-400">Route C</b></span>
-              </div>
-
-              <div className="text-[10px] text-[var(--ink-muted)] space-y-1 pt-1 border-t border-white/5">
-                <div><b>Recommended Shelter:</b></div>
-                <div className="text-white font-semibold">School Building, Bheemgal</div>
-                <div className="flex justify-between font-mono pt-1 text-[9px]">
-                  <span>Distance: <b>6.2 km</b></span>
-                  <span>Est. Travel Time: <b>22 min</b></span>
-                </div>
-              </div>
-
-              <button
-                onClick={() => onOpenExplainability(selectedVillage)}
-                className="w-full py-1.5 rounded-[8px] bg-white/5 hover:bg-white/10 text-white font-semibold text-[10px] border border-white/10 text-center"
-              >
-                VIEW ALL RECOMMENDATIONS
-              </button>
-            </div>
-
-            {/* AFFECTED SUMMARY CARD */}
-            <div className="bg-[#151A21] p-3 rounded-[14px] border border-white/5 space-y-2">
-              <div className="text-[10px] font-bold text-[var(--ink-muted)] uppercase tracking-wider">
-                AFFECTED SUMMARY
-              </div>
-
-              <div className="space-y-1 text-[11px]">
-                <div className="flex justify-between"><span className="text-[var(--ink-muted)]">Villages at Risk:</span> <b className="text-white font-mono">12</b></div>
-                <div className="flex justify-between"><span className="text-[var(--ink-muted)]">Population at Risk:</span> <b className="text-white font-mono">18,650</b></div>
-                <div className="flex justify-between"><span className="text-[var(--ink-muted)]">Roads Likely to Close:</span> <b className="text-amber-400 font-mono">8</b></div>
-                <div className="flex justify-between"><span className="text-[var(--ink-muted)]">Bridges at Risk:</span> <b className="text-red-400 font-mono">3</b></div>
-                <div className="flex justify-between"><span className="text-[var(--ink-muted)]">Shelters Available:</span> <b className="text-emerald-400 font-mono">7</b></div>
-              </div>
-
-              <button
-                onClick={() => onNavigate('reports')}
-                className="w-full py-1.5 rounded-[8px] bg-white/5 hover:bg-white/10 text-white font-semibold text-[10px] border border-white/10 text-center"
-              >
-                VIEW DETAILED REPORT
-              </button>
-            </div>
-          </div>
-        </aside>
       </div>
 
       {/* FLOOD PROPAGATION TIMELINE SCRUBBER BAR */}

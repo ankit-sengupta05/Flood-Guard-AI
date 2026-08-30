@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Dam-Break 3D Hydro Simulation</title>
+<style>
+  :root{
+    --surface-base:#0B0E12;
+    --surface-raised:#151A21;
+    --ink:#F4F6F8;
+    --ink-muted:#8A94A3;
+    --accent:#FF6A3D;
+  }
+  html,body{margin:0;height:100%;background:var(--surface-base);overflow:hidden;
+    font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);}
+  #canvas-wrap{position:fixed;inset:0;}
+  canvas{display:block;}
+
+  .panel{
+    position:fixed; background:var(--surface-raised); border-radius:20px;
+    padding:16px 18px; box-shadow:0 8px 30px rgba(0,0,0,.4);
+  }
+  #hud{ top:20px; left:20px; width:250px; }
+  #hud h1{font-size:15px;margin:0 0 4px;font-weight:600;}
+  #hud p{font-size:12px;color:var(--ink-muted);margin:0 0 10px;line-height:1.4;}
+  .row{display:flex;justify-content:space-between;font-size:12px;padding:4px 0;color:var(--ink-muted);}
+  .row b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600;}
+
+  #controls{ bottom:20px; left:20px; display:flex; gap:10px; align-items:center; }
+  button{
+    font-family:inherit; font-size:13px; font-weight:600; cursor:pointer;
+    border:none; border-radius:999px; padding:11px 20px; color:var(--ink);
+    background:transparent; border:1px solid rgba(255,255,255,.12);
+    transition:transform .15s ease, background .15s ease, border-color .15s ease;
+  }
+  button:hover{transform:scale(1.03); border-color:rgba(255,255,255,.3);}
+  button.primary{ background:var(--accent); border-color:var(--accent); color:#1a0a05;}
+  button.primary:hover{ background:#ff7d54; }
+  button:disabled{opacity:.35; cursor:default; transform:none;}
+
+  .pill{
+    display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600;
+    padding:6px 12px; border-radius:999px; background:rgba(255,255,255,.06); color:var(--ink-muted);
+  }
+  .dot{width:6px;height:6px;border-radius:999px;background:var(--accent);}
+
+  #mode-badge{ position:fixed; top:20px; right:20px; }
+  #hint{ position:fixed; bottom:80px; right:20px; font-size:11px; color:var(--ink-muted); text-align:right; max-width:220px; line-height:1.5;}
+
+  #dem-panel{ top:20px; right:20px; margin-top:44px; width:230px; }
+  #dem-panel h2{font-size:12px;margin:0 0 8px;font-weight:600;color:var(--ink-muted);text-transform:uppercase;letter-spacing:.04em;}
+  #dem-panel label{display:block;font-size:11px;color:var(--ink-muted);margin:8px 0 3px;}
+  #dem-panel input[type=file]{font-size:11px;color:var(--ink-muted);width:100%;}
+  #dem-panel input[type=number], #dem-panel input[type=range]{
+    width:100%; background:var(--surface-base); border:1px solid rgba(255,255,255,.12);
+    border-radius:10px; color:var(--ink); padding:6px 8px; font-size:12px; box-sizing:border-box;
+  }
+  #dem-panel .two-col{display:flex; gap:8px;}
+  #dem-panel button{width:100%; margin-top:10px;}
+  #dem-status{font-size:11px; color:var(--accent); margin-top:8px; min-height:14px;}
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap"></div>
+
+<div class="panel" id="hud">
+  <h1>Almatti Dam — Dam-Break Scenario</h1>
+  <p>Procedural terrain stand-in for an uploaded DEM heightmap. Virtual-pipe shallow-water model, real-time.</p>
+  <div class="row"><span>Sim time</span><b id="stat-t">0.0 s</b></div>
+  <div class="row"><span>Reservoir volume</span><b id="stat-vol">—</b></div>
+  <div class="row"><span>Downstream outflow</span><b id="stat-out">—</b></div>
+</div>
+
+<div class="panel" id="controls">
+  <button class="primary" id="btn-breach">Break Dam</button>
+  <button id="btn-rain">Add Rainfall</button>
+  <button id="btn-reset">Reset</button>
+</div>
+
+<div class="pill" id="mode-badge"><span class="dot"></span>SURROGATE MODE — real-time preview</div>
+<div id="hint">Drag to orbit · scroll to zoom · right-drag to pan</div>
+
+<div class="panel" id="dem-panel">
+  <h2>Load real DEM</h2>
+  <label>heightmap.bin (raw float32, row-major)</label>
+  <input type="file" id="dem-file" accept=".bin" />
+  <div class="two-col">
+    <div><label>Width</label><input type="number" id="dem-w" value="200"/></div>
+    <div><label>Height</label><input type="number" id="dem-h" value="200"/></div>
+  </div>
+  <label>Dam position (upstream → downstream)</label>
+  <input type="range" id="dam-pos" min="0.05" max="0.95" step="0.01" value="0.32"/>
+  <label>Reservoir level (m)</label>
+  <input type="number" id="inp-reservoir" step="0.5"/>
+  <button id="btn-apply-dem">Apply &amp; Reset</button>
+  <div id="dem-status"></div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+/* ---------------------------------------------------------------------
+ * 1. GRID / TERRAIN SETUP
+ * -------------------------------------------------------------------*/
+const N = 110;                 // grid resolution (N x N cells)
+const WORLD = 220;              // world-space span of the terrain (units)
+const DX = WORLD / N;
+
+const terrainH = new Float32Array(N * N);   // bedrock elevation
+const waterH   = new Float32Array(N * N);   // water depth above bedrock
+// flux[i*4 + dir], dir: 0=+x(downstream-ish east) 1=-x 2=+z 3=-z
+let flux = new Float32Array(N * N * 4);
+
+const idx = (i, j) => j * N + i;
+
+function smoothNoise(x, y) {
+  // cheap multi-octave sine noise, good enough for a stand-in DEM
+  return (
+    Math.sin(x * 1.7) * Math.cos(y * 1.3) * 2.2 +
+    Math.sin(x * 4.1 + 1.0) * Math.cos(y * 3.7) * 0.9 +
+    Math.sin(x * 9.3 + 3.1) * Math.cos(y * 8.1) * 0.35
+  );
+}
+
+let DAM_X = 0.32;        // dam position along the valley (0..1, upstream->downstream) - adjustable once a real DEM is loaded
+const DAM_HALF_W = 0.012;
+let breach = { active: false, gapCenter: 0.5, gapHalfWidth: 0.05, progress: 0 };
+
+// --- real DEM support -------------------------------------------------
+let demHeight = null, demW = 0, demH = 0, usingDEM = false;
+
+function sampleDEM(u, v) {
+  const fx = u * (demW - 1), fy = v * (demH - 1);
+  const x0 = Math.floor(fx), x1 = Math.min(demW - 1, x0 + 1);
+  const y0 = Math.floor(fy), y1 = Math.min(demH - 1, y0 + 1);
+  const sx = fx - x0, sy = fy - y0;
+  const h00 = demHeight[y0 * demW + x0], h10 = demHeight[y0 * demW + x1];
+  const h01 = demHeight[y1 * demW + x0], h11 = demHeight[y1 * demW + x1];
+  return (h00 * (1 - sx) + h10 * sx) * (1 - sy) + (h01 * (1 - sx) + h11 * sx) * sy;
+}
+
+function proceduralBedrock(u, v) {
+  const upstreamPlateau = 34 - u * 6;              // reservoir basin, gently sloped
+  const valley = -13 * Math.exp(-Math.pow((v - 0.5) / 0.16, 2)); // river channel carved in the middle
+  let base;
+  if (u < DAM_X) {
+    base = upstreamPlateau;
+  } else {
+    const t = (u - DAM_X) / (1 - DAM_X);
+    base = 30 - t * 34; // long downstream run-out slope
+  }
+  return base + valley + smoothNoise(u * 6, v * 6) * (u < DAM_X ? 0.4 : 1.2);
+}
+
+function bedrockHeight(u, v) {
+  // u: 0 (upstream/reservoir side) -> 1 (far downstream)
+  // v: 0..1 across the valley width
+  let base = usingDEM ? sampleDEM(u, v) : proceduralBedrock(u, v);
+
+  // dam wall overlay: real DEMs (30-90m SRTM) rarely resolve an actual dam
+  // structure, so the wall itself is always synthetic, positioned at DAM_X -
+  // slide "Dam position" until the ridge lines up with the real valley's
+  // narrowest point once your DEM is loaded.
+  const distToDam = Math.abs(u - DAM_X);
+  let ridge = 0;
+  if (distToDam < DAM_HALF_W * 3) {
+    const wallProfile = Math.exp(-Math.pow(distToDam / DAM_HALF_W, 2));
+    let gapFactor = 1;
+    if (breach.active) {
+      const gapDist = Math.abs(v - breach.gapCenter);
+      const gapWidth = breach.gapHalfWidth * breach.progress;
+      if (gapDist < gapWidth) {
+        // smooth-in the breach opening
+        gapFactor = Math.max(0, 1 - (1 - gapDist / gapWidth) * breach.progress);
+      }
+    }
+    ridge = 26 * wallProfile * gapFactor;
+  }
+
+  return base + ridge;
+}
+
+function buildTerrain() {
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const u = i / (N - 1);
+      const v = j / (N - 1);
+      terrainH[idx(i, j)] = bedrockHeight(u, v);
+    }
+  }
+}
+
+let RESERVOIR_LEVEL = 34; // fill upstream basin up to this elevation - adjustable via the "Load real DEM" panel
+
+function resetWater() {
+  waterH.fill(0);
+  flux.fill(0);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const u = i / (N - 1);
+      if (u < DAM_X - DAM_HALF_W * 2) {
+        const bed = terrainH[idx(i, j)];
+        waterH[idx(i, j)] = Math.max(0, RESERVOIR_LEVEL - bed);
+      }
+    }
+  }
+}
+
+buildTerrain();
+resetWater();
+
+/* ---------------------------------------------------------------------
+ * 2. SHALLOW-WATER STEP (virtual-pipe model)
+ * -------------------------------------------------------------------*/
+const G = 9.81;
+const PIPE_A = 0.9;      // pipe cross-section constant
+const DAMPING = 0.985;
+const DT_SUB = 0.02;
+
+function simStep() {
+  // rainfall
+  if (addRain) {
+    for (let k = 0; k < N * N; k++) waterH[k] += 0.0006;
+  }
+
+  // 1) update flux from head difference (terrain + water)
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const c = idx(i, j);
+      const hHere = terrainH[c] + waterH[c];
+      const neighbors = [
+        i < N - 1 ? idx(i + 1, j) : -1,
+        i > 0 ? idx(i - 1, j) : -1,
+        j < N - 1 ? idx(i, j + 1) : -1,
+        j > 0 ? idx(i, j - 1) : -1,
+      ];
+      for (let d = 0; d < 4; d++) {
+        const n = neighbors[d];
+        let f = flux[c * 4 + d] * DAMPING;
+        if (n >= 0) {
+          const dh = hHere - (terrainH[n] + waterH[n]);
+          f += DT_SUB * PIPE_A * G * dh / DX;
+        } else {
+          // open boundary on the far-downstream edge (i = N-1 side) lets water leave;
+          // other edges are closed (no external flow).
+          const isDownstreamEdge = d === 0 && i === N - 1;
+          f = isDownstreamEdge ? Math.max(f, 0) : 0;
+        }
+        flux[c * 4 + d] = Math.max(0, f);
+      }
+    }
+  }
+
+  // 2) scale outflow so a cell never drains more water than it has
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const c = idx(i, j);
+      const totalOut = flux[c*4] + flux[c*4+1] + flux[c*4+2] + flux[c*4+3];
+      const available = waterH[c] * DX * DX / DT_SUB;
+      if (totalOut > available && totalOut > 1e-8) {
+        const scale = available / totalOut;
+        flux[c*4]   *= scale;
+        flux[c*4+1] *= scale;
+        flux[c*4+2] *= scale;
+        flux[c*4+3] *= scale;
+      }
+    }
+  }
+
+  // 3) apply net flux to water height
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const c = idx(i, j);
+      let net = -(flux[c*4] + flux[c*4+1] + flux[c*4+2] + flux[c*4+3]);
+      if (i < N - 1) net += flux[idx(i+1,j)*4 + 1];
+      if (i > 0)     net += flux[idx(i-1,j)*4 + 0];
+      if (j < N - 1) net += flux[idx(i,j+1)*4 + 3];
+      if (j > 0)     net += flux[idx(i,j-1)*4 + 2];
+      waterH[c] = Math.max(0, waterH[c] + (DT_SUB * net) / (DX * DX));
+    }
+  }
+
+  if (breach.active && breach.progress < 1) {
+    breach.progress = Math.min(1, breach.progress + 0.01);
+    buildTerrain(); // re-carve the widening breach into the dam geometry
+  }
+}
+
+/* ---------------------------------------------------------------------
+ * 3. THREE.JS SCENE
+ * -------------------------------------------------------------------*/
+const wrap = document.getElementById('canvas-wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0B0E12);
+scene.fog = new THREE.FogExp2(0x0B0E12, 0.0032);
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(120, 90, 150);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+wrap.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+scene.add(new THREE.HemisphereLight(0xf4f6f8, 0x1a1206, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+sun.position.set(80, 140, 60);
+scene.add(sun);
+
+// --- terrain mesh ---
+const terrainGeo = new THREE.PlaneGeometry(WORLD, WORLD, N - 1, N - 1);
+terrainGeo.rotateX(-Math.PI / 2);
+const terrainColors = new Float32Array(N * N * 3);
+const lowCol = new THREE.Color(0x3a3226);   // valley floor — warm neutral
+const highCol = new THREE.Color(0x8a94a3);  // ridge/dam — cool neutral (matches --ink-muted)
+terrainGeo.setAttribute('color', new THREE.BufferAttribute(terrainColors, 3));
+const terrainMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, metalness: 0 });
+const terrainMesh = new THREE.Mesh(terrainGeo, terrainMat);
+scene.add(terrainMesh);
+
+function syncTerrainMesh() {
+  const pos = terrainGeo.attributes.position;
+  const col = terrainGeo.attributes.color;
+  let minH = Infinity, maxH = -Infinity;
+  for (let k = 0; k < N * N; k++) { minH = Math.min(minH, terrainH[k]); maxH = Math.max(maxH, terrainH[k]); }
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const c = idx(i, j);
+      // PlaneGeometry vertex order matches row-major (i across, j down) after rotateX
+      const vi = j * N + i;
+      pos.setY(vi, terrainH[c]);
+      const t = (terrainH[c] - minH) / (maxH - minH + 1e-6);
+      const col3 = lowCol.clone().lerp(highCol, t);
+      col.setXYZ(vi, col3.r, col3.g, col3.b);
+    }
+  }
+  pos.needsUpdate = true;
+  col.needsUpdate = true;
+  terrainGeo.computeVertexNormals();
+}
+syncTerrainMesh();
+
+// --- water mesh ---
+const waterGeo = new THREE.PlaneGeometry(WORLD, WORLD, N - 1, N - 1);
+waterGeo.rotateX(-Math.PI / 2);
+const waterMat = new THREE.MeshPhysicalMaterial({
+  color: 0x2f6fb0, transparent: true, opacity: 0.82,
+  roughness: 0.15, metalness: 0.05, transmission: 0.25, side: THREE.DoubleSide,
+});
+const waterMesh = new THREE.Mesh(waterGeo, waterMat);
+scene.add(waterMesh);
+
+const WATER_EPS = 0.02;
+function syncWaterMesh() {
+  const pos = waterGeo.attributes.position;
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const c = idx(i, j);
+      const vi = j * N + i;
+      const w = waterH[c];
+      const y = w > WATER_EPS ? terrainH[c] + w : terrainH[c] - 0.5; // duck below terrain when dry -> invisible
+      pos.setY(vi, y);
+    }
+  }
+  pos.needsUpdate = true;
+  waterGeo.computeVertexNormals();
+}
+syncWaterMesh();
+
+/* ---------------------------------------------------------------------
+ * 4. UI WIRING
+ * -------------------------------------------------------------------*/
+let addRain = false;
+const statT = document.getElementById('stat-t');
+const statVol = document.getElementById('stat-vol');
+const statOut = document.getElementById('stat-out');
+const btnBreach = document.getElementById('btn-breach');
+const btnRain = document.getElementById('btn-rain');
+const btnReset = document.getElementById('btn-reset');
+
+btnBreach.onclick = () => {
+  breach = { active: true, gapCenter: 0.5, gapHalfWidth: 0.05, progress: 0.001 };
+  btnBreach.disabled = true;
+};
+btnRain.onclick = () => {
+  addRain = !addRain;
+  btnRain.classList.toggle('primary', addRain);
+  btnRain.textContent = addRain ? 'Rainfall: On' : 'Add Rainfall';
+};
+// --- DEM loader panel ---
+const demStatus = document.getElementById('dem-status');
+const damPosSlider = document.getElementById('dam-pos');
+const reservoirInput = document.getElementById('inp-reservoir');
+let pendingDemArray = null;
+
+document.getElementById('dem-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const buf = await file.arrayBuffer();
+  pendingDemArray = new Float32Array(buf);
+  demStatus.textContent = `Loaded ${file.name} (${pendingDemArray.length} values) — set Width/Height to match, then Apply.`;
+});
+
+damPosSlider.addEventListener('input', () => {
+  DAM_X = parseFloat(damPosSlider.value);
+  buildTerrain();
+  syncTerrainMesh();
+});
+
+document.getElementById('btn-apply-dem').onclick = () => {
+  if (!pendingDemArray) { demStatus.textContent = 'Choose a heightmap.bin file first.'; return; }
+  const w = parseInt(document.getElementById('dem-w').value, 10);
+  const h = parseInt(document.getElementById('dem-h').value, 10);
+  if (w * h !== pendingDemArray.length) {
+    demStatus.textContent = `Width×Height (${w * h}) doesn't match file length (${pendingDemArray.length}). Check dem_to_heightmap.py's console output for the right values.`;
+    return;
+  }
+  demHeight = pendingDemArray; demW = w; demH = h; usingDEM = true;
+  let mn = Infinity, mx = -Infinity;
+  for (const v of demHeight) { if (v < mn) mn = v; if (v > mx) mx = v; }
+  RESERVOIR_LEVEL = parseFloat(reservoirInput.value) || (mn + (mx - mn) * 0.55);
+  reservoirInput.value = RESERVOIR_LEVEL.toFixed(1);
+  breach = { active: false, gapCenter: 0.5, gapHalfWidth: 0.05, progress: 0 };
+  addRain = false; btnRain.classList.remove('primary'); btnRain.textContent = 'Add Rainfall';
+  btnBreach.disabled = false;
+  simTime = 0;
+  buildTerrain();
+  resetWater();
+  syncTerrainMesh();
+  demStatus.textContent = `Using real DEM: ${w}×${h} cells, ${mn.toFixed(0)}m–${mx.toFixed(0)}m elevation.`;
+  document.getElementById('mode-badge').innerHTML = '<span class="dot"></span>SURROGATE MODE — real DEM loaded';
+};
+
+btnReset.onclick = () => {
+  breach = { active: false, gapCenter: 0.5, gapHalfWidth: 0.05, progress: 0 };
+  addRain = false;
+  btnRain.classList.remove('primary');
+  btnRain.textContent = 'Add Rainfall';
+  btnBreach.disabled = false;
+  simTime = 0;
+  buildTerrain();
+  resetWater();
+  syncTerrainMesh();
+};
+
+/* ---------------------------------------------------------------------
+ * 5. MAIN LOOP
+ * -------------------------------------------------------------------*/
+let simTime = 0;
+const SUBSTEPS_PER_FRAME = 3;
+
+function outflowVolume() {
+  let out = 0;
+  for (let j = 0; j < N; j++) out += flux[idx(N-1, j) * 4 + 0];
+  return out;
+}
+function totalVolume() {
+  let v = 0;
+  for (let k = 0; k < N*N; k++) v += waterH[k] * DX * DX;
+  return v;
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  for (let s = 0; s < SUBSTEPS_PER_FRAME; s++) { simStep(); simTime += DT_SUB; }
+  syncWaterMesh();
+  if (breach.active) syncTerrainMesh();
+
+  statT.textContent = simTime.toFixed(1) + ' s';
+  statVol.textContent = totalVolume().toFixed(0) + ' m³·u';
+  statOut.textContent = outflowVolume().toFixed(2) + ' m³·u/s';
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+reservoirInput.value = RESERVOIR_LEVEL.toFixed(1);
+</script>
+</body>
+</html>
