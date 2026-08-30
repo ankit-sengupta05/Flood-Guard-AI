@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, FlyControls, Html, Float } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Village, DamInfo } from '../data/mockData';
@@ -29,6 +29,62 @@ const sampleTerrainHeight = (dem: DemHeightmap | null, x: number, y: number): nu
   const col = Math.max(0, Math.min(dem.width - 1, Math.round(nx)));
   const row = Math.max(0, Math.min(dem.height - 1, Math.round(ny)));
   return dem.data[row * dem.width + col];
+};
+
+// Arrival-Time Heatmap Overlay Component
+const ArrivalTimeOverlay: React.FC<{ scenarioId: string; damPosition: number; dem: DemHeightmap | null; visible: boolean }> = ({ 
+  scenarioId, 
+  damPosition, 
+  dem,
+  visible 
+}) => {
+  const [texture, setTexture] = useState<THREE.Texture | null>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
+  const spanKm = 15.0;
+
+  useEffect(() => {
+    if (!visible || !scenarioId) return;
+    
+    const textureLoader = new THREE.TextureLoader();
+    const controller = new AbortController();
+    
+    textureLoader.load(
+      `/scenarios/${scenarioId}/arrival-time-texture`,
+      (loadedTexture) => {
+        loadedTexture.magFilter = THREE.LinearFilter;
+        loadedTexture.minFilter = THREE.LinearFilter;
+        setTexture(loadedTexture);
+      },
+      undefined,
+      (error) => {
+        console.warn(`Failed to load arrival-time texture: ${error}`);
+      }
+    );
+
+    return () => controller.abort();
+  }, [scenarioId, visible]);
+
+  if (!visible || !texture) return null;
+
+  const damX = -18 + damPosition * 28;
+  const damBaseZ = sampleTerrainHeight(dem, damX, 0);
+  const overlayHeight = damBaseZ + 0.2; // slightly above terrain to avoid z-fighting
+
+  return (
+    <mesh
+      ref={meshRef}
+      position={[0, overlayHeight, 0]}
+      rotation={[-Math.PI / 2, 0, 0]}
+    >
+      <planeGeometry args={[spanKm * 2, spanKm * 2]} />
+      <meshBasicMaterial
+        map={texture}
+        transparent
+        depthWrite={false}
+        side={THREE.DoubleSide}
+      />
+    </mesh>
+  );
 };
 
 // Procedural 3D Terrain Mesh Component
@@ -176,6 +232,7 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
 }) => {
   const [cameraMode, setCameraMode] = useState<'cinematic' | 'drone'>('cinematic');
   const [showWater, setShowWater] = useState<boolean>(true);
+  const [showArrivalHeatmap, setShowArrivalHeatmap] = useState<boolean>(true);
   const [dem, setDem] = useState<DemHeightmap | null>(null);
   const [demFile, setDemFile] = useState<File | null>(null);
   const [demWidth, setDemWidth] = useState('200');
@@ -320,6 +377,10 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
           <span>Show water</span>
           <input type="checkbox" checked={showWater} onChange={(event) => setShowWater(event.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
         </label>
+        <label className="flex items-center justify-between gap-3 rounded border border-white/10 bg-[#0B0E12] px-2 py-1.5 text-[var(--ink-muted)]">
+          <span>Show arrival heatmap</span>
+          <input type="checkbox" checked={showArrivalHeatmap} onChange={(event) => setShowArrivalHeatmap(event.target.checked)} className="h-4 w-4 accent-[var(--accent)]" />
+        </label>
         <button onClick={() => void applyDem()} className="w-full rounded-lg bg-[var(--accent)] px-3 py-2 font-bold text-[#080b10] hover:brightness-110">APPLY &amp; RESET TERRAIN</button>
         <p className="min-h-7 text-[var(--ink-muted)] leading-relaxed">{demStatus}</p>
         <p className="text-[9px] leading-relaxed text-[var(--ink-dim)]">The procedural fallback is disabled; the scene now relies on the selected dam terrain asset.</p>
@@ -338,6 +399,12 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
         <TerrainMesh showSatelliteOverlay={showSatelliteOverlay} dem={dem} damPosition={damPosition} />
         {showWater && <WaterSurface currentTimeStep={currentTimeStep} reservoirLevel={reservoirLevel} dem={dem} damPosition={damPosition} />}
         {showWater && <SPHParticles currentTimeStep={currentTimeStep} />}
+        {showArrivalHeatmap && <ArrivalTimeOverlay 
+          scenarioId="scenario-demo-1" 
+          damPosition={damPosition} 
+          dem={dem}
+          visible={showArrivalHeatmap}
+        />}
 
         {villages.map((v) => {
           const isSelected = selectedVillage?.id === v.id;

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 import math
 import os
@@ -11,10 +12,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+import numpy as np
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from PIL import Image
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -22,6 +25,56 @@ DAM_SOURCE = ROOT / "important-dam-locations.md"
 ASSET_ROOT = ROOT / "dam_heightmaps"
 
 Role = Literal["PUBLIC", "ANALYST", "EMERGENCY_MANAGER", "SYSTEM_ADMIN"]
+
+GRID_N = 256  # cells per side
+GRID_SPAN_KM = 15.0  # grid coverage radius around dam
+
+
+def compute_arrival_grid(scenario: dict[str, Any]) -> np.ndarray:
+    """Compute arrival-time field (minutes until flood) using radial wave propagation.
+    
+    Simulates water spreading from dam breach as circular wavefront.
+    Speed increases with breach width. Returns grid of arrival times in minutes.
+    """
+    dam = get_dam(scenario["dam_id"])
+    breach_width = scenario["params"].get("breach_width_m", 80)
+    
+    # Speed of floodwater front (m/s): wider breach = faster propagation
+    speed_mps = 0.4 + (breach_width / 200.0)
+    
+    # Create grid centered on dam
+    xs = np.linspace(-GRID_SPAN_KM, GRID_SPAN_KM, GRID_N)
+    ys = np.linspace(-GRID_SPAN_KM, GRID_SPAN_KM, GRID_N)
+    xx, yy = np.meshgrid(xs, ys)
+    
+    # Distance from dam in km, converted to meters
+    dist_m = np.sqrt(xx**2 + yy**2) * 1000.0
+    
+    # Arrival time in minutes (distance / speed / 60)
+    arrival_min = dist_m / (speed_mps + 0.01) / 60.0
+    
+    return arrival_min.astype(np.float32)
+
+
+def arrival_grid_to_rgba(grid_min: np.ndarray, max_min: float = 180.0) -> np.ndarray:
+    """Convert arrival-time grid to RGBA image.
+    
+    Fast arrival (red/opaque) -> near dam (immediate danger)
+    Slow arrival (orange/yellow/fading) -> far from dam (later impact)
+    """
+    # Normalize: 0 = immediate (dam location), 1 = very late/no impact
+    t = np.clip(grid_min / max_min, 0, 1)
+    
+    # Color mapping: red at dam, orange/yellow further out, transparent beyond max_min
+    red = np.full_like(t, 255, dtype=np.uint8)
+    green = (t * 180).astype(np.uint8)  # increases from 0 (pure red) to orange/yellow
+    blue = np.zeros_like(t, dtype=np.uint8)
+    
+    # Opacity: opaque near dam (high impact), fading with distance
+    alpha = (np.maximum(0, 1 - t) * 220 + 35).astype(np.uint8)
+    
+    return np.dstack([red, green, blue, alpha])
+
 
 
 def now_iso() -> str:
@@ -94,7 +147,59 @@ if ASSET_ROOT.exists():
     app.mount("/assets", StaticFiles(directory=ASSET_ROOT), name="dam-assets")
 
 
-@app.get("/")
+# ─────────────────────────────────────────────────────────────────────────
+# ARRIVAL-TIME GRID & HEATMAP TEXTURE ENDPOINTS
+# ─────────────────────────────────────────────────────────────────────────
+
+@app.get("/scenarios/{scenario_id}/arrival-time-grid")
+def arrival_time_grid_json(scenario_id: str):
+    """Return arrival-time grid as JSON array (for frontend processing).
+    
+    Grid is 256x256, covering ±15 km around dam center.
+    Values are in minutes from breach initiation.
+    """
+    scenario = get_scenario(scenario_id)
+    grid = compute_arrival_grid(scenario)
+    return {
+        "grid": grid.round(1).tolist(),
+        "cell_count": GRID_N,
+        "span_km": GRID_SPAN_KM,
+        "dam_id": scenario["dam_id"],
+        "scenario_id": scenario_id,
+        "max_arrival_min": 180.0,
+    }
+
+
+@app.get("/scenarios/{scenario_id}/arrival-time-texture")
+def arrival_time_texture(scenario_id: str):
+    """Return arrival-time heatmap as PNG texture overlay.
+    
+    Red (opaque) = immediate flood arrival near dam
+    Orange/Yellow (fading) = later arrival, progressive flood
+    Transparent = beyond ~180 minutes (no significant impact)
+    
+    Texture can be directly overlaid on 3D terrain mesh.
+    """
+    scenario = get_scenario(scenario_id)
+    grid = compute_arrival_grid(scenario)
+    rgba = arrival_grid_to_rgba(grid)
+    
+    img = Image.fromarray(rgba, mode="RGBA")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    
+    return Response(
+        content=buf.getvalue(),
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f"inline; filename=arrival-time-{scenario_id}.png",
+        },
+    )
+
+
+
 def root():
     return {"service": "flood-guard-api", "status": "ok", "health": "/health", "docs": "/docs"}
 
