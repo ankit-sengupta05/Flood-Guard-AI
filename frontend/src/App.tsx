@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Header } from './components/Header';
 import { HomeLanding } from './components/HomeLanding';
-import { CommandCenter } from './components/CommandCenter';
+import { DualViewLayout } from './components/DualViewLayout';
 import { ExplainabilityModal } from './components/ExplainabilityModal';
 import { AssumptionsModal } from './components/AssumptionsModal';
 import { ExportModal } from './components/ExportModal';
@@ -23,8 +23,8 @@ import {
 } from 'lucide-react';
 
 export function App() {
-  const [activeRoute, setActiveRoute] = useState<string>('home');
-  const [currentDam, setCurrentDam] = useState<Dam | null>(null);
+  const [activeRoute, setActiveRoute] = useState<string>('command-center');
+  const [currentDam, setCurrentDam] = useState<Dam | null>(HERO_DAM);
 
   // Modals
   const [explainVillage, setExplainVillage] = useState<VillageRisk | null>(null);
@@ -71,14 +71,16 @@ export function App() {
           />
         )}
 
-        {/* 1. COMMAND CENTER (The Visual Centerpiece) */}
+        {/* 1. COMMAND CENTER (Default 2D view with explicit 2D / 3D / Compare mode switcher) */}
         {activeRoute === 'command-center' && (
-          <CommandCenter
-            initialDam={currentDam ?? HERO_DAM}
-            onDamChange={setCurrentDam}
-            onOpenExplainability={(v) => setExplainVillage(v)}
-            onOpenAssumptions={() => setShowAssumptionsModal(true)}
-            onNavigate={setActiveRoute}
+          <DualViewLayout
+            scenarioId={currentDam?.id ?? 'scenario-demo-1'}
+            damId={currentDam?.id ?? HERO_DAM.id}
+            damName={currentDam?.name ?? HERO_DAM.name}
+            damLat={currentDam?.lat ?? HERO_DAM.lat}
+            damLng={currentDam?.lng ?? HERO_DAM.lng}
+            breachWidth={100}
+            onExit={() => setActiveRoute('home')}
           />
         )}
 

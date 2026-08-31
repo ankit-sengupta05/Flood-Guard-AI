@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { MapPin } from 'lucide-react';
 
 interface FloodMapProps {
   damLat: number;
@@ -32,7 +31,7 @@ const damIcon = L.divIcon({
 });
 
 // Priority-based color mapping
-const getVillageColor = (priority: string, arrivalMin: number) => {
+const getVillageColor = (arrivalMin: number) => {
   if (arrivalMin < 15) return '#EF4444'; // bright red
   if (arrivalMin < 30) return '#F97316'; // orange
   if (arrivalMin < 60) return '#EAB308'; // yellow
@@ -60,7 +59,7 @@ export const FloodMap: React.FC<FloodMapProps> = ({
   scenarioId,
   onVillageSelect,
 }) => {
-  const [imageOverlay, setImageOverlay] = useState<string | null>(null);
+  const [, setImageOverlay] = useState<string | null>(null);
 
   useEffect(() => {
     if (scenarioId) {
@@ -71,10 +70,7 @@ export const FloodMap: React.FC<FloodMapProps> = ({
 
   // Calculate bounds for the map view
   const kmToDegrees = spanKm / 111; // rough approximation (1 degree latitude ≈ 111 km)
-  const bounds: [[number, number], [number, number]] = [
-    [damLat - kmToDegrees, damLng - kmToDegrees],
-    [damLat + kmToDegrees, damLng + kmToDegrees],
-  ];
+  void kmToDegrees;
 
   return (
     <div className="w-full h-full rounded-[16px] overflow-hidden border border-white/10">
@@ -140,7 +136,7 @@ export const FloodMap: React.FC<FloodMapProps> = ({
             position={[village.lat, village.lng]}
             icon={L.divIcon({
               html: `<div class="w-6 h-6 rounded-full border-2 border-white shadow-lg flex items-center justify-center text-[10px] font-bold text-white"
-                style="background-color: ${getVillageColor(village.priority, village.arrivalTimeMin)};">
+                style="background-color: ${getVillageColor(village.arrivalTimeMin)};">
                 ${Math.floor(village.arrivalTimeMin)}
               </div>`,
               iconSize: [24, 24],

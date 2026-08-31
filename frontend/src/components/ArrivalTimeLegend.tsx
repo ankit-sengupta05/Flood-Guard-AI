@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertCircle, Clock, Droplet } from 'lucide-react';
+import { AlertCircle, Droplet } from 'lucide-react';
 
 interface ArrivalTimeLegendProps {
   scenarioId?: string;

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ArrivalTimeLegend } from './ArrivalTimeLegend';
 import { VillageImpactCard } from './VillageImpactCard';
 import { FloodMap } from './FloodMap';
-import { ChevronDown, Map, List, AlertTriangle } from 'lucide-react';
+import { Map, List, AlertTriangle } from 'lucide-react';
 
 interface ArrivalTimeDashboardProps {
   scenarioId: string;
@@ -33,21 +33,10 @@ export const ArrivalTimeDashboard: React.FC<ArrivalTimeDashboardProps> = ({
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [selectedVillageId, setSelectedVillageId] = useState<string | null>(villages[0]?.id ?? null);
-  const [expandedSections, setExpandedSections] = useState({
-    legend: false,
-    analysis: true,
-  });
 
   const selectedVillage = villages.find((v) => v.id === selectedVillageId);
   const criticalCount = villages.filter((v) => v.arrivalTimeMin < 15).length;
   const highRiskCount = villages.filter((v) => v.arrivalTimeMin >= 15 && v.arrivalTimeMin < 30).length;
-
-  const toggleSection = (section: keyof typeof expandedSections) => {
-    setExpandedSections((prev) => ({
-      ...prev,
-      [section]: !prev[section],
-    }));
-  };
 
   return (
     <div className="space-y-4 h-full overflow-y-auto">

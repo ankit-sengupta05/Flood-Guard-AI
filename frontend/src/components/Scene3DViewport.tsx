@@ -1,17 +1,34 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, FlyControls, Html, Float } from '@react-three/drei';
 import * as THREE from 'three';
-import type { Village, DamInfo } from '../data/mockData';
 import { Camera, Compass, Sparkles, MapPin } from 'lucide-react';
 
+type Scene3DVillage = {
+  id?: string | number;
+  name?: string;
+  coords3D?: [number, number, number] | number[];
+  arrivalTimeMin?: number;
+  priority?: 'high' | 'medium' | 'low';
+};
+
+type Scene3DDam = {
+  id?: string;
+  name?: string;
+};
+
 interface Scene3DProps {
-  selectedDam: DamInfo;
-  villages: Village[];
-  selectedVillage: Village | null;
-  onSelectVillage: (village: Village) => void;
-  currentTimeStep: number;
-  showSatelliteOverlay: boolean;
+  selectedDam?: Scene3DDam;
+  villages?: Scene3DVillage[];
+  selectedVillage?: Scene3DVillage | null;
+  onSelectVillage?: (village: Scene3DVillage) => void;
+  currentTimeStep?: number;
+  showSatelliteOverlay?: boolean;
+  scenarioId?: string;
+  damId?: string;
+  damName?: string;
+  damPosition?: number[];
+  breachWidth?: number;
 }
 
 interface DemHeightmap {
@@ -223,12 +240,12 @@ const SPHParticles: React.FC<{ currentTimeStep: number }> = ({ currentTimeStep }
 
 // 3D Scene Controls & Render Tree
 export const Scene3DViewport: React.FC<Scene3DProps> = ({
-  selectedDam,
-  villages,
-  selectedVillage,
+  selectedDam = {},
+  villages = [],
+  selectedVillage = null,
   onSelectVillage,
-  currentTimeStep,
-  showSatelliteOverlay,
+  currentTimeStep = 20,
+  showSatelliteOverlay = false,
 }) => {
   const [cameraMode, setCameraMode] = useState<'cinematic' | 'drone'>('cinematic');
   const [showWater, setShowWater] = useState<boolean>(true);
@@ -245,10 +262,10 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
     const controller = new AbortController();
     const normalizeSlug = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').replace(/-+/g, '-') || 'dam';
     const assetNames = Array.from(new Set([
-      normalizeSlug(selectedDam.id),
-      normalizeSlug(selectedDam.name),
-      selectedDam.id.trim(),
-      selectedDam.name.trim(),
+      normalizeSlug(selectedDam.id ?? ''),
+      normalizeSlug(selectedDam.name ?? ''),
+      (selectedDam.id ?? '').trim(),
+      (selectedDam.name ?? '').trim(),
     ])).filter(Boolean);
 
     setDem(null);
@@ -407,13 +424,18 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
         />}
 
         {villages.map((v) => {
+          const villageName = v.name ?? 'Village';
+          const priority = v.priority ?? 'medium';
           const isSelected = selectedVillage?.id === v.id;
+          const position = v.coords3D ?? [0, 0, 0];
           return (
-            <group key={v.id} position={v.coords3D}>
+            <group key={String(v.id ?? villageName)} position={position as [number, number, number]}>
               <Float speed={2} rotationIntensity={0.2} floatIntensity={0.5}>
                 <Html distanceFactor={25} center>
                   <div
-                    onClick={() => onSelectVillage(v)}
+                    onClick={() => {
+                      if (onSelectVillage) onSelectVillage(v);
+                    }}
                     className={`cursor-pointer transition-all duration-300 transform hover:scale-110 ${
                       isSelected ? 'scale-110 z-30' : 'z-20'
                     }`}
@@ -425,22 +447,22 @@ export const Scene3DViewport: React.FC<Scene3DProps> = ({
                           : 'border-white/20 hover:border-white/50'
                       }`}
                     >
-                      <MapPin className={`w-4 h-4 ${v.priority === 'high' ? 'text-[var(--accent)]' : 'text-sky-400'}`} />
+                      <MapPin className={`w-4 h-4 ${priority === 'high' ? 'text-[var(--accent)]' : 'text-sky-400'}`} />
                       <div className="text-left">
-                        <div className="text-[11px] font-bold text-white whitespace-nowrap">{v.name}</div>
+                        <div className="text-[11px] font-bold text-white whitespace-nowrap">{villageName}</div>
                         <div className="flex items-center space-x-1.5 text-[9px] text-[var(--ink-muted)]">
-                          <span>t = {v.arrivalTimeMin}m</span>
+                          <span>t = {v.arrivalTimeMin ?? 0}m</span>
                           <span>•</span>
                           <span
                             className={`font-semibold uppercase px-1 rounded ${
-                              v.priority === 'high'
+                              priority === 'high'
                                 ? 'bg-[#FF6A3D]/20 text-[#FF6A3D]'
-                                : v.priority === 'medium'
+                                : priority === 'medium'
                                 ? 'bg-sky-500/20 text-sky-400'
                                 : 'bg-slate-500/20 text-slate-400'
                             }`}
                           >
-                            {v.priority}
+                            {priority}
                           </span>
                         </div>
                       </div>

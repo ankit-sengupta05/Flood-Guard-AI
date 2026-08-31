@@ -6,7 +6,6 @@
  */
 
 import React from 'react';
-import { CommandCenter } from './CommandCenter';
 import { ArrivalTimeDashboard } from './ArrivalTimeDashboard';
 import { Scene3DViewport } from './Scene3DViewport';
 import { ArrivalTimeLegend } from './ArrivalTimeLegend';
@@ -32,7 +31,10 @@ export const FloodAnalysisLayout: React.FC<{
           selectedDam={selectedDam}
           villages={villages}
           selectedVillage={selectedVillage}
-          onSelectVillage={setSelectedVillage}
+          onSelectVillage={(v) => {
+            const found = villages.find(vi => vi.id === v.id);
+            if (found) setSelectedVillage(found);
+          }}
           currentTimeStep={20}
           showSatelliteOverlay={false}
         />
