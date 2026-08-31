@@ -14,7 +14,25 @@ function toDam(record: Record<string, unknown>): RegistryDam {
   return { id: String(record.dam_id), name: String(record.name), river: String(record.river), state: String(record.state), district: String(record.district), lat: Number(record.lat), lng: Number(record.lng), heightM: Number(record.height_m ?? 0), capacityMcm: Number(record.reservoir_capacity_mcm ?? 0), currentStorageMcm: 0, waterLevelPct: Number(record.water_level_pct ?? 0), inflowM3s: 0, outflowM3s: 0, status: String(record.status ?? 'no_active_scenario'), modelMode: 'surrogate', demRef: String(record.dem_ref ?? ''), terrainMeshRef: String(record.terrain_mesh_ref ?? '') };
 }
 function risk(dam: RegistryDam) { return Math.round(dam.waterLevelPct * 0.72 + (dam.status.includes('high') ? 24 : dam.status.includes('medium') ? 12 : 0)); }
-function MapFocus({ dam }: { dam?: RegistryDam }) { const map = useMap(); useEffect(() => { if (dam) map.flyTo([dam.lat, dam.lng], 10, { duration: 1.15 }); else map.flyTo([22.4, 79.2], 5.2, { duration: 0.8 }); }, [dam, map]); return null; }
+function MapFocus({ dam }: { dam?: RegistryDam }) { 
+  const map = useMap(); 
+  useEffect(() => { 
+    let panInterval: ReturnType<typeof setInterval>;
+    if (dam) {
+      map.flyTo([dam.lat, dam.lng], 10, { duration: 1.15 }); 
+    } else {
+      map.flyTo([22.4, 79.2], 5.2, { duration: 1.5 });
+      // Ambient auto-pan animation
+      let lng = 79.2;
+      panInterval = setInterval(() => {
+        lng -= 0.02; // Slow drift west
+        map.panTo([22.4, lng], { animate: true, duration: 0.1, easeLinearity: 1 });
+      }, 100);
+    }
+    return () => clearInterval(panInterval);
+  }, [dam, map]); 
+  return null; 
+}
 
 function DamMap({ dams, selected, focusedDam, onSelect }: { dams: RegistryDam[]; selected: RegistryDam; focusedDam?: RegistryDam; onSelect: (dam: RegistryDam) => void }) {
   return <MapContainer className="india-leaflet-map" center={[22.4, 79.2]} zoom={5.2} minZoom={4} maxZoom={15} scrollWheelZoom zoomControl={true} attributionControl={true}><TileLayer attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" /><MapFocus dam={focusedDam} />{dams.map((dam) => { const active = selected.id === dam.id; return <CircleMarker key={dam.id} center={[dam.lat, dam.lng]} radius={active ? 9 : 5} pathOptions={{ color: '#ff6a3d', weight: active ? 3 : 1.5, fillColor: active ? '#ff6a3d' : '#ffb08f', fillOpacity: active ? 1 : 0.9 }} eventHandlers={{ click: () => onSelect(dam) }}><Tooltip direction="top" offset={[0, -5]} permanent className={active ? 'dam-map-label selected' : 'dam-map-label'}>{dam.name}</Tooltip></CircleMarker>; })}</MapContainer>;
@@ -29,7 +47,16 @@ export const HomeLanding: React.FC<HomeProps> = ({ onStartSimulation, onViewArch
   const [loadError, setLoadError] = useState('');
   useEffect(() => { if (!API_URL) return; fetch(`${API_URL}/dams?page=1&page_size=100`).then((response) => { if (!response.ok) throw new Error('Registry unavailable'); return response.json(); }).then((payload: { items: Record<string, unknown>[] }) => { const registry = payload.items.map(toDam); if (registry.length) { setDams(registry); setSelected(registry[0]); } }).catch(() => setLoadError('Showing the cached registry while the API reconnects.')); }, []);
   const visibleDams = useMemo(() => dams.filter((dam) => `${dam.name} ${dam.river} ${dam.state}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => risk(b) - risk(a) || a.name.localeCompare(b.name)), [dams, query]);
-  const selectDam = (dam: RegistryDam) => { setSelected(dam); setFocusedDam(dam); setShowDetail(false); };
+  const selectDam = (dam: RegistryDam) => { 
+    if (focusedDam?.id === dam.id) {
+      // Toggle to zoom out and resume panning
+      setFocusedDam(undefined);
+    } else {
+      setSelected(dam); 
+      setFocusedDam(dam); 
+    }
+    setShowDetail(false); 
+  };
   const startSelectedDam = () => onStartSimulation(selected);
   return <div className="home-command"><div className="home-map-wrap"><div className="home-map-vignette" /><div className="home-map map-ready"><DamMap dams={dams} selected={selected} focusedDam={focusedDam} onSelect={selectDam} /></div><div className="home-map-copy"><span className="eyebrow">LIVE TERRAIN REGISTRY · INDIA</span><h1>See the risk<br /><em>before the water.</em></h1><p>One command view for dam-break scenarios, terrain evidence, and the decisions that follow.</p><div className="home-actions"><button className="primary-action" onClick={startSelectedDam}>RUN DEMO SCENARIO <ArrowRight size={15} /></button><button className="ghost-action" onClick={onViewArchitecture}>HOW IT WORKS</button></div></div><div className="home-map-legend"><span><i className="legend-dot" />REGISTERED DAM</span><span><i className="legend-ring" />SELECTED FOCUS</span><span>LIVE 2D MAP</span></div><div className="home-brand"><span className="brand-mark">FG</span><span><strong>FLOOD-GUARD AI</strong><small>DECISION SUPPORT SYSTEM</small></span></div></div><aside className="dam-registry"><div className="registry-head"><div><span className="eyebrow">COMMAND CENTER</span><h2>Dam registry</h2><p>{dams.length} locations · sorted by modeled danger</p></div><div className="registry-status"><i />API {loadError ? 'CACHE' : 'LIVE'}</div></div><div className="registry-search"><Activity size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search dam, river, state" /></div>{loadError && <div className="registry-note">{loadError}</div>}<div className="dam-registry-list">{visibleDams.map((dam, index) => <button key={dam.id} className={`registry-card ${selected.id === dam.id ? 'selected' : ''}`} onClick={() => { selectDam(dam); onStartSimulation(dam); }}><div className="registry-card-top"><span className="danger-rank">{String(index + 1).padStart(2, '0')}</span><div className="registry-card-title"><strong>{dam.name}</strong><small>{dam.river} · {dam.state}</small></div><span className="danger-score">{risk(dam)}<small>RISK</small></span></div><div className="registry-card-metrics"><span><Droplets size={13} />{dam.waterLevelPct}%<small>WATER LEVEL</small></span><span><Waves size={13} />{dam.heightM || '—'}<small>HEIGHT M</small></span><span className="card-status">{dam.status === 'no_active_scenario' ? 'NO ACTIVE SCENARIO' : dam.status.replace('_', ' ').toUpperCase()}</span></div><ChevronRight className="card-arrow" size={16} /></button>)}</div><div className="registry-footer"><span>SELECTED</span><strong>{selected.name}</strong><button onClick={() => setShowDetail(true)}>OPEN FULL INSIGHT <ArrowRight size={14} /></button></div></aside>{showDetail && <div className="detail-overlay" onClick={() => setShowDetail(false)}><section className="dam-detail" onClick={(event) => event.stopPropagation()}><button className="close-detail" onClick={() => setShowDetail(false)} aria-label="Close details"><X size={18} /></button><span className="eyebrow">DAM INTELLIGENCE BRIEF</span><h2>{selected.name}</h2><p>{selected.river} · {selected.state} · {selected.district}</p><div className="detail-grid"><div className="home-metric"><span>Risk index</span><strong>{risk(selected)}<small>/ 100</small></strong></div><div className="home-metric"><span>Water level</span><strong>{selected.waterLevelPct}<small>%</small></strong></div></div><button className="primary-action detail-action" onClick={() => onStartSimulation(selected)}>OPEN SIMULATION WORKSPACE <ArrowRight size={15} /></button></section></div>}</div>;
 };

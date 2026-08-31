@@ -43,6 +43,7 @@ interface TwoDMapViewProps {
   damLng: number;
   breachWidth?: number;
   onVillageSelect?: (village: VillageData) => void;
+  simulationTime?: number;
 }
 
 /**
@@ -56,6 +57,7 @@ export const TwoDMapView: React.FC<TwoDMapViewProps> = ({
   damLng,
   breachWidth = 50,
   onVillageSelect,
+  simulationTime = 120,
 }) => {
   const [villages, setVillages] = useState<VillageData[]>([]);
   const [simulations, setSimulations] = useState<Map<string, SimulationData>>(new Map());
@@ -334,14 +336,14 @@ export const TwoDMapView: React.FC<TwoDMapViewProps> = ({
                 </>
               </LayersControl.Overlay>
 
-              {/* Simulations */}
+              {/* Simulations (Animated based on simulationTime) */}
               <LayersControl.Overlay
                 checked={selectedSimulation === 'delft3d'}
                 name="Delft3D Simulation"
               >
                 <Circle
                   center={mapCenter}
-                  radius={14000}
+                  radius={Math.min(14000, 1000 + (simulationTime * 108))}
                   pathOptions={{
                     color: '#FF6B6B',
                     fill: true,
@@ -361,7 +363,7 @@ export const TwoDMapView: React.FC<TwoDMapViewProps> = ({
               >
                 <Circle
                   center={mapCenter}
-                  radius={14200}
+                  radius={Math.min(14200, 1000 + (simulationTime * 110))}
                   pathOptions={{
                     color: '#4ECDC4',
                     fill: true,
@@ -480,6 +482,7 @@ export const TwoDMapView: React.FC<TwoDMapViewProps> = ({
         </div>
       </div>
 
+      {/* Depth Legend (Overlaying the Map inside the flex box is tricky, we just add it to the sidebar) */}
       {/* Side Panel - Simulation Comparison */}
       <SimulationTogglePanel
         simulations={Array.from(simulations.values())}
@@ -651,6 +654,33 @@ const SimulationTogglePanel: React.FC<SimulationTogglePanelProps> = ({
           <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-300">
             <AlertCircle className="w-3 h-3 text-blue-600" />
             <span className="text-gray-600 text-xs">Models use simplified propagation</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Flood Depth Legend */}
+      <div className="p-4 border-t border-gray-200 bg-blue-50">
+        <h4 className="font-semibold text-gray-800 text-sm mb-2">Flood Depth Legend</h4>
+        <div className="space-y-1 text-xs">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ background: 'rgba(255, 107, 107, 0.2)' }}></div>
+            <span className="text-gray-700">0.0 - 0.5m (Safe)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ background: 'rgba(255, 107, 107, 0.4)' }}></div>
+            <span className="text-gray-700">0.5 - 1.0m (Warning)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ background: 'rgba(255, 107, 107, 0.6)' }}></div>
+            <span className="text-gray-700">1.0 - 2.0m (Danger)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ background: 'rgba(255, 107, 107, 0.8)' }}></div>
+            <span className="text-gray-700">2.0 - 5.0m (Severe)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded" style={{ background: 'rgba(255, 107, 107, 1.0)' }}></div>
+            <span className="text-gray-700">&gt; 5.0m (Critical)</span>
           </div>
         </div>
       </div>

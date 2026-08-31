@@ -11,7 +11,7 @@ import { AlertCircle, BarChart3, Download } from 'lucide-react';
  * Simulation result data
  */
 interface SimulationResult {
-  name: 'delft3d' | 'hec-ras';
+  name: 'delft3d' | 'sph';
   label: string;
   color: string;
   arrivalTimeGrid: number[][];
@@ -25,7 +25,7 @@ interface AffectedPlaceComparison {
   place: string;
   population: number;
   delft3dArrival: number;
-  hecRasArrival: number;
+  sphArrival: number;
   difference: number;
   percentDifference: number;
   priority: string;
@@ -50,7 +50,7 @@ export const SimulationComparison: React.FC<SimulationComparisonProps> = ({
   villages,
 }) => {
   const [delft3dResult, setDelft3dResult] = useState<SimulationResult | null>(null);
-  const [hecRasResult, setHecRasResult] = useState<SimulationResult | null>(null);
+  const [sphResult, setSphResult] = useState<SimulationResult | null>(null);
   const [comparison, setComparison] = useState<AffectedPlaceComparison[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'heatmap' | 'comparison'>('overview');
@@ -70,20 +70,20 @@ export const SimulationComparison: React.FC<SimulationComparisonProps> = ({
           'Advanced shallow water equations solver using Delft3D Flexible Mesh. Calibrated with 2025 field data from regional dam break studies. Includes Manning friction coefficient: 0.035, validated against historical breach simulations.',
       };
 
-      const hecRas: SimulationResult = {
-        name: 'hec-ras',
-        label: 'HEC-RAS 6.4 USACE Standard',
+      const sph: SimulationResult = {
+        name: 'sph',
+        label: 'SPH Particle Hydrodynamics',
         color: '#4ECDC4',
         arrivalTimeGrid: generateMockGrid(256, damLat, damLng, 1.05),
         maxArrivalTime: 180,
         computeTimeMs: 1850,
         validationRMSE: 0.18,
         descriptionLong:
-          'USACE-standard 1D-2D hybrid hydrodynamic model (HEC-RAS 6.4). Widely adopted in dam safety studies across USA and India. Manning friction coefficient: 0.040, 50m grid resolution in 2D zones.',
+          'Smooth Particle Hydrodynamics (SPH) solver for highly non-linear breach zones. Captures complex 3D splashing and near-field turbulence. Highly parallelized surrogate model for rapid execution.',
       };
 
       setDelft3dResult(delft3d);
-      setHecRasResult(hecRas);
+      setSphResult(sph);
 
       // Generate comparison data
       const comparisonData = villages
@@ -96,7 +96,7 @@ export const SimulationComparison: React.FC<SimulationComparisonProps> = ({
             place: v.place,
             population: v.population,
             delft3dArrival: Math.floor(d3),
-            hecRasArrival: Math.floor(hr),
+            sphArrival: Math.floor(hr),
             difference: Math.floor(diff),
             percentDifference: Number(((diff / Math.max(d3, hr)) * 100).toFixed(1)),
             priority: d3 < 30 ? 'CRITICAL' : d3 < 60 ? 'HIGH' : 'MEDIUM',
@@ -117,7 +117,7 @@ export const SimulationComparison: React.FC<SimulationComparisonProps> = ({
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
           <p className="text-slate-600">Running simulations...</p>
-          <p className="text-slate-500 text-sm mt-2">Delft3D + HEC-RAS</p>
+          <p className="text-slate-500 text-sm mt-2">Delft3D + SPH</p>
         </div>
       </div>
     );
@@ -160,14 +160,14 @@ export const SimulationComparison: React.FC<SimulationComparisonProps> = ({
         {activeTab === 'overview' && (
           <OverviewTab
             delft3d={delft3dResult!}
-            hecRas={hecRasResult!}
+            sph={sphResult!}
             comparison={comparison}
           />
         )}
         {activeTab === 'heatmap' && (
           <HeatmapTab
             delft3d={delft3dResult!}
-            hecRas={hecRasResult!}
+            sph={sphResult!}
           />
         )}
         {activeTab === 'comparison' && (
@@ -183,11 +183,11 @@ export const SimulationComparison: React.FC<SimulationComparisonProps> = ({
  */
 interface OverviewTabProps {
   delft3d: SimulationResult;
-  hecRas: SimulationResult;
+  sph: SimulationResult;
   comparison: AffectedPlaceComparison[];
 }
 
-const OverviewTab: React.FC<OverviewTabProps> = ({ delft3d, hecRas, comparison }) => {
+const OverviewTab: React.FC<OverviewTabProps> = ({ delft3d, sph, comparison }) => {
   const criticalPlaces = comparison.filter(p => p.delft3dArrival < 15).length;
   const totalPopulation = comparison.reduce((sum, p) => sum + p.population, 0);
 
@@ -274,28 +274,28 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ delft3d, hecRas, comparison }
           </div>
         </div>
 
-        {/* HEC-RAS */}
+        {/* SPH */}
         <div className="bg-gradient-to-br from-teal-50 to-teal-100 border border-teal-300 rounded-lg p-5">
           <div className="flex items-center gap-2 mb-3">
             <div className="w-6 h-6 rounded bg-teal-600"></div>
-            <h3 className="font-bold text-lg text-teal-900">{hecRas.label}</h3>
+            <h3 className="font-bold text-lg text-teal-900">{sph.label}</h3>
           </div>
-          <p className="text-sm text-teal-800 mb-3">{hecRas.descriptionLong}</p>
+          <p className="text-sm text-teal-800 mb-3">{sph.descriptionLong}</p>
           <div className="space-y-2 text-xs text-teal-700 bg-white rounded p-2">
             <p>
-              <strong>Solver:</strong> 1D-2D Hybrid (Finite Difference)
+              <strong>Solver:</strong> SPH Particle Dynamics
             </p>
             <p>
-              <strong>Grid:</strong> 50m structured (2D zones)
+              <strong>Resolution:</strong> 1m Particle Spacing
             </p>
             <p>
-              <strong>Manning:</strong> 0.040 (uniform)
+              <strong>Viscosity:</strong> Artificial (Monaghan type)
             </p>
             <p>
-              <strong>Compute:</strong> {hecRas.computeTimeMs}ms
+              <strong>Compute:</strong> {sph.computeTimeMs}ms
             </p>
             <p>
-              <strong>Validation RMSE:</strong> {(hecRas.validationRMSE * 100).toFixed(0)}%
+              <strong>Validation RMSE:</strong> {(sph.validationRMSE * 100).toFixed(0)}%
             </p>
           </div>
         </div>
@@ -327,10 +327,10 @@ const OverviewTab: React.FC<OverviewTabProps> = ({ delft3d, hecRas, comparison }
  */
 interface HeatmapTabProps {
   delft3d: SimulationResult;
-  hecRas: SimulationResult;
+  sph: SimulationResult;
 }
 
-const HeatmapTab: React.FC<HeatmapTabProps> = ({ delft3d, hecRas }) => {
+const HeatmapTab: React.FC<HeatmapTabProps> = ({ delft3d, sph }) => {
   return (
     <div className="p-6 space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -353,11 +353,11 @@ const HeatmapTab: React.FC<HeatmapTabProps> = ({ delft3d, hecRas }) => {
           </div>
         </div>
 
-        {/* HEC-RAS Heatmap */}
+        {/* SPH Heatmap */}
         <div>
           <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
             <div className="w-4 h-4 rounded bg-teal-600"></div>
-            {hecRas.label}
+            {sph.label}
           </h3>
           <div className="bg-gradient-to-br from-blue-200 via-cyan-300 to-teal-600 h-64 rounded-lg border-2 border-gray-300 flex items-center justify-center text-white font-bold shadow-lg">
             [256×256 Grid Visualization]
@@ -366,7 +366,7 @@ const HeatmapTab: React.FC<HeatmapTabProps> = ({ delft3d, hecRas }) => {
           </div>
           <div className="mt-3 space-y-1 text-xs">
             <p>
-              <strong>Min:</strong> 0 min (dam) | <strong>Max:</strong> {hecRas.maxArrivalTime} min
+              <strong>Min:</strong> 0 min (dam) | <strong>Max:</strong> {sph.maxArrivalTime} min
             </p>
             <p className="text-gray-600">Blue → Cyan → Teal (time progression)</p>
           </div>
@@ -454,7 +454,7 @@ const ComparisonTab: React.FC<ComparisonTabProps> = ({ comparison }) => {
               <th className="text-left p-2">Place</th>
               <th className="text-right p-2">Population</th>
               <th className="text-center p-2">Delft3D (min)</th>
-              <th className="text-center p-2">HEC-RAS (min)</th>
+              <th className="text-center p-2">SPH (min)</th>
               <th className="text-center p-2">Diff (min)</th>
               <th className="text-center p-2">Diff (%)</th>
               <th className="text-center p-2">Priority</th>
@@ -474,7 +474,7 @@ const ComparisonTab: React.FC<ComparisonTabProps> = ({ comparison }) => {
                 </td>
                 <td className="p-2 text-center">
                   <span className="bg-teal-100 text-teal-800 px-2 py-1 rounded font-bold">
-                    {place.hecRasArrival}
+                    {place.sphArrival}
                   </span>
                 </td>
                 <td className="p-2 text-center text-purple-600 font-bold">{place.difference}</td>

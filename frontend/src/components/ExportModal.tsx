@@ -119,7 +119,45 @@ export const ExportModal: React.FC<ExportModalProps> = ({ dam, onClose }) => {
               </div>
               <a
                 href="#"
-                onClick={(e) => { e.preventDefault(); alert('Downloading Flood-Guard_Emergency_Report.pdf'); onClose(); }}
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (format === 'kml') {
+                    const kmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Flood Extent Export - ${dam.name}</name>
+    <description>Deterministic mock data for SIH Demo</description>
+    <Placemark>
+      <name>Flood Extent Polygon</name>
+      <Polygon>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+              ${dam.lng},${dam.lat},0
+              ${dam.lng + 0.1},${dam.lat - 0.1},0
+              ${dam.lng - 0.1},${dam.lat - 0.1},0
+              ${dam.lng},${dam.lat},0
+            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+  </Document>
+</kml>`;
+                    const blob = new Blob([kmlContent], { type: 'application/vnd.google-earth.kml+xml' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `Flood_Extent_${dam.name.replace(/\s+/g, '_')}.kml`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                  } else {
+                    alert(`Downloading Flood-Guard_Emergency_Report.${format}`);
+                  }
+                  onClose();
+                }}
                 className="inline-block px-5 py-2 rounded-[14px] bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/30"
               >
                 Download {format.toUpperCase()} Package

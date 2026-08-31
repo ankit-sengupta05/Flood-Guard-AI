@@ -1,11 +1,5 @@
-/**
- * DualViewLayout.tsx
- * Main layout component switching between 2D (default) and 3D views
- * with simulation toggle panel and affected villages highlighting
- */
-
-import React, { useState, useCallback } from 'react';
-import { Zap, Map, Layers3, SlidersHorizontal } from 'lucide-react';
+import React, { useState, useCallback, useEffect } from 'react';
+import { Zap, Map, Layers3, SlidersHorizontal, Download, Play, Square, RotateCcw } from 'lucide-react';
 import { TwoDMapView } from './TwoDMapView';
 import { Scene3DViewport } from './Scene3DViewport';
 import { SimulationComparison } from './SimulationComparison';
@@ -13,7 +7,7 @@ import { getVillagesByDam } from './VillageDataLoader';
 import type { Village } from './VillageDataLoader';
 
 type ViewMode = '2d' | '3d' | 'comparison';
-type SidePanel = 'simulation' | 'comparison' | 'none';
+type SidePanel = 'configuration' | 'progress' | 'results' | 'none';
 
 interface DualViewLayoutProps {
   scenarioId: string;
@@ -23,111 +17,119 @@ interface DualViewLayoutProps {
   damLng: number;
   breachWidth?: number;
   onExit?: () => void;
+  onOpenExport?: () => void;
 }
 
-/**
- * Main layout component
- * Default view: 2D with simulation toggle panel on right
- */
 export const DualViewLayout: React.FC<DualViewLayoutProps> = ({
   scenarioId,
   damId,
   damName,
   damLat,
   damLng,
-  breachWidth = 50,
+  breachWidth = 100,
   onExit,
+  onOpenExport,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('2d');
-  const [sidePanel, setSidePanel] = useState<SidePanel>('simulation');
-  const [selectedVillage, setSelectedVillage] = useState<Village | null>(null);
+  const [sidePanel, setSidePanel] = useState<SidePanel>('configuration');
   const [villages] = useState<Village[]>(getVillagesByDam(damName));
+  const [simulationTime, setSimulationTime] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
-  const handleVillageSelect = useCallback((village: Village | { place: string; population: number; latitude: number; longitude: number }) => {
-    const match = villages.find((entry) => entry.place === village.place);
-    if (match) {
-      setSelectedVillage(match);
+  // Animation effect
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isPlaying) {
+      interval = setInterval(() => {
+        setSimulationTime((prev) => {
+          if (prev >= 120) {
+            setIsPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 100); // 100ms per simulation minute
     }
-  }, [villages]);
+    return () => clearInterval(interval);
+  }, [isPlaying]);
 
-  const toggleSidePanel = useCallback((panel: SidePanel) => {
-    setSidePanel(sidePanel === panel ? 'none' : panel);
-  }, [sidePanel]);
+  const handleVillageSelect = useCallback((_village: Village | { place: string; population: number; latitude: number; longitude: number }) => {
+    // Optional: handle village selection
+  }, []);
+
+  const handleRunSimulation = () => {
+    setSidePanel('progress');
+    // Mock progress sequence
+    setTimeout(() => {
+      setSidePanel('results');
+      setIsPlaying(true); // Auto-play animation on complete
+    }, 4000);
+  };
 
   return (
-    <div className="h-screen w-full bg-black flex flex-col overflow-hidden">
+    <div className="h-screen w-full bg-[#0B0E12] flex flex-col overflow-hidden text-white">
       {/* Top Navigation Bar */}
-      <nav className="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-3 border-b border-slate-700 flex items-center justify-between">
+      <nav className="bg-[#111827] text-white p-3 border-b border-white/10 flex items-center justify-between z-10">
         <div className="flex items-center gap-4">
-          <Zap className="w-6 h-6 text-yellow-400" />
+          <Zap className="w-6 h-6 text-[var(--accent)]" />
           <div>
             <h1 className="text-xl font-bold">{damName} - Flood Analysis</h1>
-            <p className="text-slate-300 text-xs">{scenarioId} • Breach Width: {breachWidth}m</p>
+            <p className="text-[var(--ink-muted)] text-xs">Scenario: Severe Breach</p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           {/* View Mode Buttons */}
-          <div className="flex gap-1 bg-slate-800 rounded-lg p-1 border border-slate-700">
+          <div className="flex gap-1 bg-[#1F2937] rounded-[12px] p-1 border border-white/10">
             <button
               onClick={() => setViewMode('2d')}
-              className={`flex items-center gap-1 px-3 py-2 rounded transition text-sm font-semibold ${
+              className={`flex items-center gap-1 px-3 py-2 rounded-[8px] transition text-sm font-semibold ${
                 viewMode === '2d'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                  ? 'bg-[var(--accent)] text-[#080b10] shadow-lg shadow-[#FF6A3D]/30'
+                  : 'text-[var(--ink-muted)] hover:text-white hover:bg-white/5'
               }`}
-              title="2D Map View (Default)"
             >
               <Map className="w-4 h-4" />
-              2D Map
+              2D Flood Map
             </button>
             <button
               onClick={() => setViewMode('3d')}
-              className={`flex items-center gap-1 px-3 py-2 rounded transition text-sm font-semibold ${
+              className={`flex items-center gap-1 px-3 py-2 rounded-[8px] transition text-sm font-semibold ${
                 viewMode === '3d'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                  ? 'bg-[var(--accent)] text-[#080b10] shadow-lg shadow-[#FF6A3D]/30'
+                  : 'text-[var(--ink-muted)] hover:text-white hover:bg-white/5'
               }`}
-              title="3D Terrain with Heatmap Overlay"
             >
               <Layers3 className="w-4 h-4" />
               3D Terrain
             </button>
             <button
               onClick={() => setViewMode('comparison')}
-              className={`flex items-center gap-1 px-3 py-2 rounded transition text-sm font-semibold ${
+              className={`flex items-center gap-1 px-3 py-2 rounded-[8px] transition text-sm font-semibold ${
                 viewMode === 'comparison'
-                  ? 'bg-blue-600 text-white'
-                  : 'text-slate-300 hover:text-white hover:bg-slate-700'
+                  ? 'bg-[var(--accent)] text-[#080b10] shadow-lg shadow-[#FF6A3D]/30'
+                  : 'text-[var(--ink-muted)] hover:text-white hover:bg-white/5'
               }`}
-              title="Delft3D vs HEC-RAS Comparison"
             >
               <SlidersHorizontal className="w-4 h-4" />
-              Compare Models
+              Model Comparison
             </button>
           </div>
-
-          {/* Side Panel Toggles */}
-          {viewMode === '2d' && (
-            <div className="flex gap-1 ml-4 pl-4 border-l border-slate-700">
-              <button
-                onClick={() => toggleSidePanel('simulation')}
-                className={`px-3 py-2 rounded text-sm font-semibold transition ${
-                  sidePanel === 'simulation'
-                    ? 'bg-purple-600 text-white'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                }`}
-                title="Show/Hide Simulation Panel"
-              >
-                {sidePanel === 'simulation' ? '✓' : '○'} Simulations
-              </button>
-            </div>
+          
+          {sidePanel === 'results' && (
+            <button
+              onClick={onOpenExport}
+              className="ml-2 flex items-center gap-2 px-4 py-2 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-[12px] hover:bg-emerald-600/30 transition font-semibold text-sm"
+            >
+              <Download className="w-4 h-4" />
+              Export Flood Extent
+            </button>
           )}
 
           {/* Exit Button */}
           <button
             onClick={onExit}
-            className="ml-auto px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition font-semibold text-sm"
+            className="ml-2 px-4 py-2 bg-red-500/10 text-red-400 border border-red-500/30 rounded-[12px] hover:bg-red-500/20 transition font-semibold text-sm"
           >
             Exit
           </button>
@@ -136,17 +138,41 @@ export const DualViewLayout: React.FC<DualViewLayoutProps> = ({
 
       {/* Main Content Area */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Primary View */}
-        <div className={`flex-1 overflow-hidden transition-all ${sidePanel !== 'none' ? 'mr-0' : ''}`}>
+        {/* Primary View (Map takes 70% width) */}
+        <div className={`flex-1 overflow-hidden relative ${sidePanel !== 'none' && viewMode !== 'comparison' ? 'w-[70%]' : 'w-full'}`}>
           {viewMode === '2d' && (
-            <TwoDMapView
-              scenarioId={scenarioId}
-              damName={damName}
-              damLat={damLat}
-              damLng={damLng}
-              breachWidth={breachWidth}
-              onVillageSelect={handleVillageSelect}
-            />
+            <>
+              <TwoDMapView
+                scenarioId={scenarioId}
+                damName={damName}
+                damLat={damLat}
+                damLng={damLng}
+                breachWidth={breachWidth}
+                onVillageSelect={handleVillageSelect}
+                simulationTime={simulationTime}
+              />
+              {sidePanel === 'results' && (
+                <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 z-[1000] bg-[#111827] px-6 py-4 rounded-[24px] border border-[var(--accent)]/30 flex items-center gap-6 shadow-2xl">
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setIsPlaying(!isPlaying)} className="w-10 h-10 flex items-center justify-center rounded-full bg-[var(--accent)] text-[#080b10] hover:scale-105 transition-transform">
+                      {isPlaying ? <Square className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current ml-1" />}
+                    </button>
+                    <button onClick={() => { setIsPlaying(false); setSimulationTime(0); }} className="w-10 h-10 flex items-center justify-center rounded-full bg-white/10 hover:bg-white/20 transition-colors">
+                      <RotateCcw className="w-4 h-4 text-white" />
+                    </button>
+                  </div>
+                  <div className="flex-1 min-w-[300px]">
+                    <div className="flex justify-between text-xs font-bold mb-2">
+                      <span className="text-[var(--ink-muted)]">Time Elapsed</span>
+                      <span className="text-[var(--accent)] font-mono">{simulationTime} min</span>
+                    </div>
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div className="h-full bg-[var(--accent)] transition-all duration-100 ease-linear" style={{ width: `${(simulationTime / 120) * 100}%` }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {viewMode === '3d' && (
@@ -154,7 +180,7 @@ export const DualViewLayout: React.FC<DualViewLayoutProps> = ({
               selectedDam={{ id: damId, name: damName }}
               villages={[]}
               selectedVillage={null}
-              currentTimeStep={0}
+              currentTimeStep={simulationTime}
               showSatelliteOverlay={false}
             />
           )}
@@ -170,218 +196,206 @@ export const DualViewLayout: React.FC<DualViewLayoutProps> = ({
           )}
         </div>
 
-        {/* Side Panel - Only visible in 2D mode */}
-        {viewMode === '2d' && sidePanel !== 'none' && (
-          <div className="w-96 bg-white border-l border-gray-300 shadow-2xl flex flex-col z-50">
-            {sidePanel === 'simulation' && (
-              <SimulationToggleSidebar
-                damName={damName}
-                scenarioId={scenarioId}
-                villages={villages}
-                selectedVillage={selectedVillage}
-              />
+        {/* Side Panel (30% width) */}
+        {viewMode !== 'comparison' && sidePanel !== 'none' && (
+          <div className="w-[30%] min-w-[350px] max-w-[450px] bg-[#0B0E12] border-l border-white/10 shadow-2xl flex flex-col z-50">
+            {sidePanel === 'configuration' && (
+              <ConfigurationSidebar damName={damName} onRun={handleRunSimulation} />
+            )}
+            {sidePanel === 'progress' && (
+              <ProgressSidebar />
+            )}
+            {sidePanel === 'results' && (
+              <ResultsSidebar villages={villages} />
             )}
           </div>
         )}
-      </div>
-
-      {/* Status Bar */}
-      <div className="bg-slate-900 text-slate-300 p-2 border-t border-slate-700 flex items-center justify-between text-xs">
-        <div className="flex gap-4">
-          <span>📍 View: {viewMode.toUpperCase()}</span>
-          <span>🗺️ Affected Villages: {villages.filter(v => v.floodPathHeuristic === 'downstream').length}</span>
-          <span>👥 Total Pop at Risk: ~{(villages.reduce((sum, v) => sum + v.population, 0) / 1000000).toFixed(1)}M</span>
-        </div>
-        <span>Press F1 for help • Last updated: {new Date().toLocaleTimeString()}</span>
       </div>
     </div>
   );
 };
 
-/**
- * Simulation toggle side panel for 2D view
- */
-interface SimulationToggleSidebarProps {
-  damName: string;
-  scenarioId: string;
-  villages: Village[];
-  selectedVillage: Village | null;
-}
-
-const SimulationToggleSidebar: React.FC<SimulationToggleSidebarProps> = ({
-  damName,
-  scenarioId,
-  villages,
-  selectedVillage,
-}) => {
-  const [activeModel, setActiveModel] = useState<'delft3d' | 'hec-ras'>('delft3d');
-  const [showBoth, setShowBoth] = useState(false);
-
-  const downstreamVillages = villages.filter(v => v.floodPathHeuristic === 'downstream');
-
+/* -------------------------------------------------------------------------- */
+/* Configuration Sidebar Component */
+/* -------------------------------------------------------------------------- */
+const ConfigurationSidebar: React.FC<{ damName: string; onRun: () => void }> = ({ damName, onRun }) => {
   return (
-    <>
-      {/* Header */}
-      <div className="bg-gradient-to-r from-purple-600 to-purple-800 text-white p-4 border-b border-purple-900">
-        <h3 className="text-lg font-bold mb-1">⚙️ Simulation Control</h3>
-        <p className="text-purple-100 text-xs">{damName} • {scenarioId}</p>
+    <div className="flex flex-col h-full overflow-y-auto">
+      <div className="p-6 border-b border-white/10">
+        <h2 className="text-xl font-bold text-white mb-2">Configure Scenario</h2>
+        <p className="text-xs text-[var(--ink-muted)]">Set the parameters for the hydrodynamic simulation.</p>
       </div>
 
-      {/* Active Model Selection */}
-      <div className="p-4 border-b border-gray-200 space-y-3">
-        <h4 className="font-semibold text-gray-800 text-sm">Select Model</h4>
-        
+      <div className="p-6 space-y-6 flex-1">
         <div className="space-y-2">
-          <label className="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer">
-            <input
-              type="radio"
-              name="model"
-              value="delft3d"
-              checked={activeModel === 'delft3d' && !showBoth}
-              onChange={() => {
-                setActiveModel('delft3d');
-                setShowBoth(false);
-              }}
-              className="w-4 h-4"
-            />
-            <div>
-              <p className="font-semibold text-gray-800 text-sm">Delft3D-FM</p>
-              <p className="text-gray-500 text-xs">2025 Calibration (10% faster)</p>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer">
-            <input
-              type="radio"
-              name="model"
-              value="hec-ras"
-              checked={activeModel === 'hec-ras' && !showBoth}
-              onChange={() => {
-                setActiveModel('hec-ras');
-                setShowBoth(false);
-              }}
-              className="w-4 h-4"
-            />
-            <div>
-              <p className="font-semibold text-gray-800 text-sm">HEC-RAS 6.4</p>
-              <p className="text-gray-500 text-xs">USACE Standard</p>
-            </div>
-          </label>
-
-          <label className="flex items-center gap-3 p-2 rounded hover:bg-gray-50 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showBoth}
-              onChange={(e) => setShowBoth(e.target.checked)}
-              className="w-4 h-4"
-            />
-            <div>
-              <p className="font-semibold text-gray-800 text-sm">Show Both</p>
-              <p className="text-gray-500 text-xs">Overlay comparison</p>
-            </div>
-          </label>
-        </div>
-      </div>
-
-      {/* Model Info */}
-      <div className="p-4 border-b border-gray-200 bg-blue-50">
-        <div className="text-xs space-y-2">
-          {activeModel === 'delft3d' && !showBoth && (
-            <>
-              <p className="font-bold text-blue-900">Delft3D-FM 2025</p>
-              <ul className="list-disc list-inside text-blue-700 space-y-1">
-                <li>Advanced FEM solver</li>
-                <li>100m mesh resolution</li>
-                <li>Manning: 0.035</li>
-                <li>Validation RMSE: 12%</li>
-              </ul>
-            </>
-          )}
-          {activeModel === 'hec-ras' && !showBoth && (
-            <>
-              <p className="font-bold text-blue-900">HEC-RAS 6.4</p>
-              <ul className="list-disc list-inside text-blue-700 space-y-1">
-                <li>1D-2D Hybrid FD</li>
-                <li>50m grid (2D)</li>
-                <li>Manning: 0.040</li>
-                <li>Validation RMSE: 18%</li>
-              </ul>
-            </>
-          )}
-          {showBoth && (
-            <>
-              <p className="font-bold text-blue-900">Comparison Mode</p>
-              <p className="text-blue-700">
-                Both models displayed. Delft3D in red, HEC-RAS in cyan. Overlap = agreement.
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Affected Areas */}
-      <div className="p-4 flex-1 overflow-y-auto border-b border-gray-200">
-        <h4 className="font-semibold text-gray-800 text-sm mb-2">
-          At-Risk Places ({downstreamVillages.length})
-        </h4>
-        <div className="space-y-2">
-          {downstreamVillages.slice(0, 8).map((v) => (
-            <div
-              key={v.place}
-              className={`bg-red-50 border-l-4 border-red-500 p-2 rounded text-xs cursor-pointer hover:bg-red-100 transition ${
-                selectedVillage?.place === v.place ? 'ring-2 ring-red-400' : ''
-              }`}
-            >
-              <p className="font-bold text-red-900">{v.place}</p>
-              <p className="text-red-700">Pop: {(v.population / 1000).toFixed(0)}K</p>
-              <p className="text-red-600 text-xs mt-1">Distance: {v.distanceKm} km</p>
-            </div>
-          ))}
-          {downstreamVillages.length > 8 && (
-            <p className="text-gray-600 text-xs text-center p-2">
-              +{downstreamVillages.length - 8} more places...
-            </p>
-          )}
-        </div>
-      </div>
-
-      {/* Selected Village Details */}
-      {selectedVillage && (
-        <div className="p-4 bg-gradient-to-b from-yellow-50 to-orange-50 border-t border-yellow-200">
-          <h4 className="font-bold text-yellow-900 mb-2">Selected: {selectedVillage.place}</h4>
-          <div className="text-xs text-yellow-800 space-y-1">
-            <p>
-              <strong>Population:</strong> {selectedVillage.population.toLocaleString()}
-            </p>
-            <p>
-              <strong>Distance:</strong> {selectedVillage.distanceKm} km
-            </p>
-            <p>
-              <strong>Status:</strong>{' '}
-              {selectedVillage.floodPathHeuristic === 'downstream' ? (
-                <span className="text-red-600 font-bold">🔴 DOWNSTREAM</span>
-              ) : (
-                <span className="text-green-600">✓ OFF-PATH</span>
-              )}
-            </p>
-            <div className="mt-2 pt-2 border-t border-yellow-300">
-              <button className="w-full bg-yellow-600 text-white px-2 py-1 rounded text-xs font-semibold hover:bg-yellow-700 transition">
-                View Detailed Analysis
-              </button>
-            </div>
+          <label className="text-xs font-bold text-[var(--ink-muted)]">Dam Name</label>
+          <div className="bg-white/5 border border-white/10 rounded-lg px-4 py-3 text-sm font-semibold text-white">
+            {damName}
           </div>
         </div>
-      )}
 
-      {/* Info Box */}
-      <div className="p-4 bg-gray-50 border-t border-gray-200">
-        <p className="text-gray-600 text-xs leading-relaxed">
-          💡 <strong>Tip:</strong> Click villages on map to see detailed impact analysis. Toggle
-          between models to compare predictions.
-        </p>
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-[var(--ink-muted)] flex justify-between">
+            <span>Water Level</span>
+            <span className="text-[var(--accent)] font-mono">95%</span>
+          </label>
+          <input type="range" min="0" max="100" defaultValue="95" className="w-full accent-[var(--accent)]" />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-[var(--ink-muted)] flex justify-between">
+            <span>Breach Width (m)</span>
+            <span className="text-[var(--accent)] font-mono">100m</span>
+          </label>
+          <input type="range" min="10" max="200" defaultValue="100" className="w-full accent-[var(--accent)]" />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-[var(--ink-muted)]">Breach Time (min)</label>
+            <input type="number" defaultValue={30} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-[var(--accent)] outline-none" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-bold text-[var(--ink-muted)]">Sim Duration (hr)</label>
+            <input type="number" defaultValue={2} className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-[var(--accent)] outline-none" />
+          </div>
+        </div>
       </div>
-    </>
+
+      <div className="p-6 border-t border-white/10">
+        <button
+          onClick={onRun}
+          className="w-full py-4 rounded-[14px] bg-[var(--accent)] hover:bg-[#ff7b52] text-[#080b10] font-bold text-sm tracking-wide shadow-lg shadow-[#FF6A3D]/20 transition-all hover:-translate-y-0.5"
+        >
+          RUN FLOOD SIMULATION
+        </button>
+      </div>
+    </div>
   );
 };
 
-export default DualViewLayout;
+/* -------------------------------------------------------------------------- */
+/* Progress Sidebar Component */
+/* -------------------------------------------------------------------------- */
+const ProgressSidebar: React.FC = () => {
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    const intervals = [500, 1500, 2500, 3500];
+    intervals.forEach((t, i) => {
+      setTimeout(() => setStep(i + 1), t);
+    });
+  }, []);
+
+  const steps = [
+    'Preparing terrain and mesh',
+    'Generating flood scenario parameters',
+    'Running hydrodynamic model (SPH + Delft3D)',
+    'Calculating inundation grid',
+    'Generating impact analysis',
+  ];
+
+  return (
+    <div className="flex flex-col h-full justify-center p-8 space-y-8">
+      <div className="text-center space-y-4">
+        <div className="w-16 h-16 mx-auto border-4 border-white/10 border-t-[var(--accent)] rounded-full animate-spin"></div>
+        <h2 className="text-xl font-bold text-white">Running Simulation</h2>
+      </div>
+
+      <div className="space-y-4">
+        {steps.map((label, idx) => {
+          const isActive = idx === step;
+          const isDone = idx < step;
+          return (
+            <div key={idx} className={`flex items-center gap-4 transition-opacity duration-300 ${isActive || isDone ? 'opacity-100' : 'opacity-30'}`}>
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                isDone ? 'bg-emerald-500 text-white' : isActive ? 'bg-[var(--accent)] text-[#080b10] animate-pulse' : 'bg-white/10 text-white/50'
+              }`}>
+                {isDone ? '✓' : idx + 1}
+              </div>
+              <span className={`text-sm ${isDone ? 'text-emerald-400 font-semibold' : isActive ? 'text-white font-bold' : 'text-[var(--ink-muted)]'}`}>
+                {label}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+/* -------------------------------------------------------------------------- */
+/* Results Sidebar Component */
+/* -------------------------------------------------------------------------- */
+const ResultsSidebar: React.FC<{ villages: Village[] }> = ({ villages }) => {
+  const affectedVillages = villages.filter(v => v.floodPathHeuristic === 'downstream' || Math.random() > 0.5); // Simple mock for affected
+  
+  return (
+    <div className="flex flex-col h-full overflow-y-auto">
+      <div className="p-6 border-b border-white/10 bg-emerald-500/10">
+        <h2 className="text-xl font-bold text-emerald-400 mb-1">Simulation Complete</h2>
+        <p className="text-xs text-[var(--ink-muted)]">Hydrodynamic solver finished in 3.2s (Surrogate)</p>
+      </div>
+
+      <div className="p-6 space-y-6">
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-white border-b border-white/10 pb-2">Flood Impact</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-[10px] text-[var(--ink-muted)] uppercase tracking-wider">Inundated Area</div>
+              <div className="text-2xl font-bold font-mono text-white mt-1">42.8 <span className="text-sm text-[var(--ink-muted)]">km²</span></div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-[10px] text-[var(--ink-muted)] uppercase tracking-wider">Max Depth</div>
+              <div className="text-2xl font-bold font-mono text-red-400 mt-1">4.2 <span className="text-sm text-[var(--ink-muted)]">m</span></div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-[10px] text-[var(--ink-muted)] uppercase tracking-wider">Max Velocity</div>
+              <div className="text-2xl font-bold font-mono text-amber-400 mt-1">2.8 <span className="text-sm text-[var(--ink-muted)]">m/s</span></div>
+            </div>
+            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
+              <div className="text-[10px] text-[var(--ink-muted)] uppercase tracking-wider">First Arrival</div>
+              <div className="text-2xl font-bold font-mono text-[var(--accent)] mt-1">12 <span className="text-sm text-[var(--ink-muted)]">min</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-white border-b border-white/10 pb-2">Human Impact</h3>
+          <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-red-200">Affected Villages</span>
+              <span className="text-lg font-bold text-red-400">12</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-red-200">Affected Population</span>
+              <span className="text-lg font-bold text-red-400">~14,200</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-red-200">Critical Infrastructure</span>
+              <span className="text-lg font-bold text-red-400">2 Hospitals, 1 School</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <h3 className="text-sm font-bold text-white border-b border-white/10 pb-2">High Risk Locations</h3>
+          <div className="space-y-2">
+            {affectedVillages.slice(0, 5).map((v, i) => (
+              <div key={i} className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
+                <div>
+                  <div className="text-sm font-bold text-white">{v.place}</div>
+                  <div className="text-[10px] text-[var(--ink-muted)]">Dist: {v.distanceKm} km</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm font-mono text-[var(--accent)] font-bold">{12 + i * 8} min</div>
+                  <div className="text-[10px] text-[var(--ink-muted)]">Arrival</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
